@@ -1,0 +1,11 @@
+{
+  "name": "html-environment",
+  "version": "1.0a",
+  "description": "ACT-R Environment tools and experiment window viewer tools in a browser.",
+  "main": "environment.js",
+  "bin": "environment.js",
+  "author": "Dan Bothell",
+  "pkg": {
+    "assets": ["environment.html","expwindow.html"]                
+  }
+}

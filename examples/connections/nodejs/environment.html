@@ -1,0 +1,2453 @@
+<html>
+ <body>
+
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script> // General communication with the node.js interface to ACT-R
+
+   var socket = io('/environment');
+   var name_string = "";
+   var cmdMap = new Map;
+   var cmd_id = 0;
+   var resultMap = new Map;
+
+
+   socket.on('evaluate',function(params_list,id){
+     
+     var cmd = params_list.shift();
+
+     if (cmdMap.get(cmd)) {
+       socket.emit('result',cmdMap.get(cmd)(params_list),id);  
+     } else {
+       socket.emit('result',null,id);
+     }
+   });
+
+   function record_error(msg) {
+     console.log(msg);
+   }
+
+   function callback_handler(fn,success,data) {
+     if (success) {
+       fn(data);
+     } else {
+       record_error(data);
+       fn(null);
+     }
+   }
+   
+   function evaluate_cmd(cmd,model,params,fn) {
+     
+     if(!params) {
+       params = [];
+     }
+     params.unshift(model);
+     params.unshift(cmd);
+     if (fn) {
+       socket.emit('evaluate',params,function(success,data) {
+         callback_handler(fn,success,data);
+       });
+     } else {
+       socket.emit('evaluate',params,null);
+     }
+   }
+
+   function add_cmd(cmd,docs,fn,name_fn) {
+   
+     cmdMap.set(cmd,fn);
+
+     if (name_fn) {
+       socket.emit('add',cmd,docs,function(success,data) {
+         callback_handler(name_fn,success,data);
+       });
+     } else {
+       socket.emit('add',cmd,docs,null);
+     }
+   }  
+
+
+   function monitor_cmd(cmd,mon) {
+     socket.emit('monitor',cmd,mon);
+   }  
+
+   function stop_monitor(cmd,mon) {
+     socket.emit('remove-monitor',cmd,mon);
+   }  
+
+   function get_connections(fn) {
+     if (fn) {
+       socket.emit('connections',function(success,data) {
+         callback_handler(fn,success,data);
+       });
+     } else {
+       socket.emit('connections',null);
+     }
+   }
+
+   function get_cmds(fn) {
+     if (fn) {
+       socket.emit('cmds',function(success,data) {
+         callback_handler(fn,success,data);
+       });
+     } else {
+       socket.emit('cmds',null);
+     }
+   }
+
+   function check_cmd(cmd,fn) {
+     if (fn) {
+       socket.emit('check',cmd,function(success,data) {
+         callback_handler(fn,success,data);
+       });
+     } else {
+       socket.emit('check',cmd,null);
+     }
+   }
+
+  </script>
+
+
+  <script> // Functions for common interface creation and display purposes
+
+   function create_title_bar(name,with_model){
+       var title_bar = document.createElement('div');
+       title_bar.setAttribute("class","title-bar");
+
+       var title_div = document.createElement('div');
+       title_div.setAttribute("class","title-name");           
+       
+       var h3 = document.createElement('b');
+       
+       if (with_model) {
+         h3.innerHTML = name + " ("+ current_model + ")";
+       } else {
+         h3.innerHTML = name;
+       }
+
+       title_div.appendChild(h3);
+       title_bar.appendChild(title_div);
+
+       var close_div = document.createElement('div');
+       close_div.setAttribute("class","close-box");
+
+       close = document.createElement('button');
+       close.innerHTML = "X";
+       close_div.appendChild(close);
+
+       title_bar.appendChild(close_div);
+  
+       return([title_bar,title_div,close]);
+   }
+
+
+   function scrub_text(txt) {
+     return(txt.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
+   }
+
+   function create_list_view () {
+     var display = document.createElement('div');
+     display.setAttribute("class","select-display");
+     var c_list = document.createElement('div');
+     c_list.setAttribute("class","select-display-list");
+     var c_display = document.createElement('div');
+     c_display.setAttribute("class","select-display-output");
+     var text_box = document.createElement('div');
+     text_box.setAttribute("class","output-display");
+     var text = document.createElement('pre');
+     var list = document.createElement('ul');
+     c_list.appendChild(list);
+     c_display.appendChild(text_box);
+     text_box.appendChild(text);
+     display.appendChild(c_list);
+     display.appendChild(c_display);
+
+     return([display,text,list]);
+   }
+
+   var div_views = new Map;
+
+  </script>
+
+
+  <style>
+
+    .title-bar {
+      display: flex;
+      height: 40px;
+      width: 100%;
+      flex-direction: row;
+      overflow: hidden;
+    }
+
+    .title-name {
+      display: flex;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .close-box {
+      display: flex;
+      width: 40px;
+    }
+
+    .select-display {
+      display: flex;
+      flex-direction: row;
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+    }
+
+    .select-display-list {
+      display: flex;
+      height: 100%;
+      width: 35%;
+      overflow: auto;
+      ul {
+        display: flex;
+        overflow: auto;
+        padding: 0;
+      }
+    }
+
+    .select-li {
+      display: flex;
+      white-space: nowrap;
+    }
+
+    .select-display-output {
+      display: flex;
+      height: 100%;
+      width: 65%;
+      overflow: hidden;
+    }
+
+   .output-display {
+     display: flex;
+     overflow: auto;
+     width: 100%;
+     height: 100%;
+   }
+
+   ul {
+     list-style-type: none;
+     padding: 0;
+   }
+
+  </style>
+
+   
+  <script> // Implement the current model notification and selection
+
+   var current_model = null;
+   var all_models = null;
+
+   function update_model(){
+     
+     var cm = document.getElementById("current_model");
+
+     while (cm.firstChild) {
+       cm.removeChild(cm.firstChild);
+     }
+
+     if (all_models.length == 0) {
+       current_model = null;
+     } else {
+ 
+       all_models.forEach(function(m){
+         var s = document.createElement("option");
+         s.setAttribute("value",m);
+         s.innerHTML= m;
+         cm.appendChild(s);
+       });
+
+       if (all_models.length == 1 || current_model == null) {
+         current_model = all_models[0];
+         cm.setAttribute("value",all_models[0]);
+       } else {
+           if (all_models.indexOf(current_model) == -1) {
+             current_model = all_models[0];
+             cm.setAttribute("value",all_models[0]);
+           } else {
+             cm.setAttribute("value",current_model);
+           }  
+       }
+     }
+   }
+   
+   evaluate_cmd("mp-models",null,null,function(names) {
+     var n = names[0];
+
+     if (!n) {
+       all_models = [];
+     } else {
+       all_models = n;
+     }
+     update_model();
+   });
+
+   function add_model(name) {
+
+     var n = name[0];
+     all_models.push(n);
+     update_model();
+   }          
+
+   function delete_model(name) {
+
+     var n = name[0];
+     var i = all_models.indexOf(n);
+     all_models.splice(i,1);
+     update_model();
+   }
+   
+   function change_model() {
+
+     var cm = document.getElementById("current_model");
+
+     if (cm.options.selectedIndex != -1) {
+       current_model = cm.childNodes[cm.options.selectedIndex].getAttribute("value");
+       cm.setAttribute("value",current_model);
+     } else {
+       current_model = null;
+       cm.setAttribute("value",null);
+     }   
+   }
+
+   add_cmd("add_model","environment creating-model monitoring cmd. do not call",add_model,null);
+   monitor_cmd("creating-model","add_model");
+
+   add_cmd("delete_model","environment deleting-model monitoring cmd. do not call",delete_model,null);
+   monitor_cmd("deleting-model","delete_model");
+
+  </script>
+
+
+  <script> // handle the selection of files and assume the location based on provided unit #
+
+   var load_results = "";
+
+   function collect_load_results(text) {
+     load_results = load_results + text[1];
+   }
+
+   add_cmd("monitor_loading","environment cmd to monitor output while loading. do not call",collect_load_results,null);
+
+
+   function report_load_results(results) {
+     stop_monitor("model-trace","monitor_loading");
+     stop_monitor("command-trace","monitor_loading");
+     stop_monitor("warning-trace","monitor_loading");
+     stop_monitor("general-trace","monitor_loading");
+
+     if (!results) {
+       alert("Failure loading model\n"+load_results);
+     } else {
+       alert("Successful load\n"+load_results);
+     }
+     load_results = "";
+   }     
+
+   function load_model(unit) {
+     if (socket.io.opts.hostname == "127.0.0.1" || socket.io.opts.hostname == "localhost") {
+     
+       var input = document.createElement('input');
+       input.type = 'file';
+
+       load_results = "";
+
+       monitor_cmd("model-trace","monitor_loading");
+       monitor_cmd("command-trace","monitor_loading");
+       monitor_cmd("warning-trace","monitor_loading");
+       monitor_cmd("general-trace","monitor_loading");
+
+       input.onchange = e => { 
+         var file = e.target.files[0]; 
+         if (unit) {
+           var num = [document.getElementById('load_unit').valueAsNumber];
+           evaluate_cmd("load-act-r-code",null,["ACT-R:tutorial;unit"+num+";"+file.name],report_load_results);
+         } else {
+           evaluate_cmd("load-act-r-code",null,["ACT-R:tutorial;lisp;"+file.name],report_load_results);
+         }
+       }
+
+       input.click();
+
+     } else {
+       alert("Only local connections may load files.");
+     }
+   }       
+
+   </script>
+
+
+   <script> // The reset, reload, and run actions
+
+   function reset_actr(){
+     evaluate_cmd("reset",null,null,null);
+   }
+
+   function reload_actr(){
+     evaluate_cmd("reload",null,null,null);
+   }
+
+   function run_actr(){
+     evaluate_cmd("run",null,[document.getElementById('run_time').valueAsNumber],null);
+   }
+
+  </script>
+
+
+  <script> // The event queue display 
+
+   function show_event_queue(){
+    evaluate_cmd("mp-queue-text",null,[true],display_event_queue);
+   }
+
+   function display_event_queue(text) {
+
+     var txt = text[0];
+     var evt_queue = div_views.get("evt_queue");
+
+     if (evt_queue) {
+      if (evt_queue.getAttribute("open") != "yes") {
+         evt_queue.setAttribute("open","yes");
+         document.getElementById('controls').appendChild(evt_queue);
+      }
+
+      document.getElementById("evt-text").innerHTML = scrub_text(txt);
+
+     } else {
+       var controls = document.getElementById('controls');
+       var div = document.createElement('div');
+       div.setAttribute("class","evt-queue-box");
+       div.setAttribute("open","yes");
+
+       var title_bar = create_title_bar("Event Queue",false);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[1].onclick = show_event_queue;
+       title_bar[2].onclick = function(){
+                         div.setAttribute("open","no");
+                         controls.removeChild(div);
+                       };
+
+       var text_box = document.createElement('div');
+       text_box.setAttribute("class","output-display");
+
+       text = document.createElement('pre');
+       text.setAttribute("id","evt-text");
+       text.innerHTML = scrub_text(txt);
+
+       div_views.set("evt_queue",div);
+
+       text_box.appendChild(text);
+       div.appendChild(text_box);
+       controls.appendChild(div);
+     }
+   }
+
+  </script>
+
+  <style>
+
+   .evt-queue-box {
+     display: flex;
+     width: 300px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+  </style>
+
+  <script> // provide the running indicator
+
+   function update_running() {
+
+     if (document.getElementById("show_running").checked) {
+ 
+       monitor_cmd("run-stop","stopped_monitor");
+       monitor_cmd("run-start","running_monitor");
+
+     } else {
+        document.getElementById('running-indicator').innerHTML="-------";
+        stop_monitor("run-stop","stopped_monitor");
+        stop_monitor("run-start","running_monitor");
+     }     
+   }
+
+   function running_now(ignore) {
+     document.getElementById('running-indicator').innerHTML="<div style=\"color: green\">RUNNING</div>";
+   }
+
+   function stopped_now(ignore) {
+     document.getElementById('running-indicator').innerHTML="<div style=\"color: red\">STOPPED</div>";
+   }
+
+   add_cmd("running_monitor","environment cmd to monitor run-start. do not call",running_now,null);
+   add_cmd("stopped_monitor","environment cmd to monitor run-stop. do not call",stopped_now,null);
+
+  </script>
+
+
+  <script>  // the declarative memory viewer
+
+   function dm_filter_changed(view) {
+
+     var items = div_views.get(view);
+     
+     items.current_filter = items.filter.childNodes[items.filter.options.selectedIndex].value;
+
+     update_dm_chunk_list(view);
+   }
+
+   function update_dm_chunk_list(view) {
+
+     var items = div_views.get(view);
+
+     evaluate_cmd("filter-dm-chunks",items.model,[items.current_filter],function(data){
+                   var chunks = data[0];
+                   
+                   while(items.list.firstChild) {
+                     items.list.removeChild(items.list.firstChild);
+                   }
+
+                   var notdisplayed = true;
+
+                   if (chunks != null) {
+                   chunks.forEach(function(c){
+                     var li = document.createElement('li');
+                     li.setAttribute("class","select-li");
+
+                     li.innerHTML=c;
+
+                     li.onclick = function() {
+                                li.style.backgroundColor= "gray";
+                                items.chunk = c;
+                                if (items.selected) {
+                                  items.selected.style.backgroundColor = null;
+                                }
+                                items.selected = li;
+                                update_chunk_view(view);
+                                };
+
+                     if (c == items.chunk) {
+                       li.style.backgroundColor= "gray";
+                       items.selected = li;
+                       update_chunk_view(view);
+                       notdisplayed = false;
+                     }
+                     items.list.appendChild(li);
+                   });
+                   }
+                   if (notdisplayed) {
+                     items.chunk = null;
+                     update_chunk_view(view);
+                   }
+                });
+   }
+
+
+   function why_not_dm(view) {
+     var items = div_views.get(view);
+     
+     if (items.chunk != null) {
+       evaluate_cmd("dm-whynot-text",items.model,[items.chunk],function(data){
+                                                                show_whynot_dm(items.model,items.chunk,data[0]);
+                                                               });
+     }
+   }
+
+
+   function show_whynot_dm(model,chunk,txt) {
+
+     var controls = document.getElementById('controls');
+     var div = document.createElement('div');
+     div.setAttribute("class","why-not-box");
+
+     var title_bar = create_title_bar("Whynot "+chunk+" ("+model+")",false);
+     div.appendChild(title_bar[0]);
+
+     title_bar[2].onclick = function(){
+                      controls.removeChild(div);
+                      };
+
+     var text_box = document.createElement('div');
+     text_box.setAttribute("class","output-display");
+
+     var text = document.createElement('pre');
+     text.innerHTML = scrub_text(txt);
+
+     text_box.appendChild(text);
+     div.appendChild(text_box);
+     controls.appendChild(div);
+   }
+
+
+   function update_chunk_view(view) {
+     var items = div_views.get(view);
+
+     if (items.chunk == null) {
+       items.text.innerHTML = "";
+     } else {
+       evaluate_cmd("dm-chunk-details",items.model,[items.chunk],function(data) {
+         items.text.innerHTML = scrub_text(data[0]);
+       });
+     }
+   }
+
+
+   function update_dm_viewer(dm) {
+     var items = div_views.get(dm);
+    
+     evaluate_cmd("dm-slot-filters",items.model,null,function(data){
+                    var filters = data[0];
+                    while (items.filter.firstChild) {
+                     items.filter.removeChild(items.filter.firstChild);
+                    }
+
+                    var count = 0;
+                    var unset = true;
+                    filters.forEach(function(m){
+                      var s = document.createElement("option");
+                      if (m == null) {
+                        m = "null";
+                      }
+                      s.value = m;
+                      s.value = s.value.replace(/,/g, " ")
+                      s.innerHTML= m;
+                      items.filter.appendChild(s);
+
+                      if (items.current_filter == s.value) {
+                        items.filter.options.selectedIndex = count;
+                        unset = false;
+                      }
+                      count++;
+                    
+                    });
+
+                  if (unset) {
+                    items.filter.options.selectedIndex = 0;
+                    items.current_filter = filters[0];
+                  }
+                  update_dm_chunk_list(dm);
+                  });
+    }
+                    
+
+   function dm_viewer() {
+     if (current_model == null) {
+       alert("Declarative Memory viewer requires a current model.");
+     } else {
+
+       var controls = document.getElementById('controls');
+       var div = document.createElement('div');
+       div.setAttribute("class","dm-box");
+
+       var title_bar = create_title_bar("Declarative Memory",true);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[1].onclick = function(){
+                              update_dm_viewer(div);
+                       };
+
+       title_bar[2].onclick = function(){
+                         controls.removeChild(div);
+                         div_views.delete(div);
+                       };
+
+
+       var filter_div = document.createElement('div');
+       filter_div.setAttribute("class","dm-filter-bar");
+       
+       var but = document.createElement('button');
+       but.innerHTML="Why not?";
+       but.onclick = function(){
+                         why_not_dm(div);
+                     };
+       
+       filter_div.appendChild(but);
+
+       var f_div = document.createElement('div');
+       var filter = document.createElement('pre');
+       filter.innerHTML = " Filter: ";
+
+       f_div.appendChild(filter);
+       filter_div.appendChild(f_div);
+
+       var filter_select = document.createElement('select');
+
+       filter_select.onchange = function(){
+                                  dm_filter_changed(div);
+                                };
+
+       filter_div.appendChild(filter_select);
+
+       div.appendChild(filter_div);
+
+       var view = create_list_view();
+
+       div.appendChild(view[0]);
+   
+       div_views.set(div,{"list": view[2], "text": view[1], "filter": filter_select, "current_filter": null, "model": current_model, "chunk": null});
+
+       update_dm_viewer(div);
+
+       controls.appendChild(div);
+    }
+  }
+
+  </script>
+
+  <style>
+
+   .dm-box {
+     display: flex;
+     width: 400px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+   .dm-filter-bar {
+     display: flex;
+     height: 35px;
+     width: 100%;
+     flex-direction: row;
+   }
+ 
+   .why-not-box {
+     display: flex;
+     width: 300px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+  </style>
+
+
+  <script> // procedural viewer
+
+
+   function update_p_viewer(view) {
+
+     var items = div_views.get(view);
+
+     evaluate_cmd("all-productions",items.model,null,function(data){
+                   var productions = data[0];
+                   
+                   while(items.list.firstChild) {
+                     items.list.removeChild(items.list.firstChild);
+                   }
+
+                   var notdisplayed = true;
+
+                   if (productions != null) {
+                     productions.forEach(function(p){
+                       var li = document.createElement('li');
+                       li.setAttribute("class","select-li");
+
+                       li.innerHTML=p;
+
+                       li.onclick = function() {
+                                li.style.backgroundColor= "gray";
+                                items.p = p;
+                                if (items.selected) {
+                                  items.selected.style.backgroundColor = null;
+                                }
+                                items.selected = li;
+                                update_p_view(view);
+                                };
+
+                     if (p == items.p) {
+                       li.style.backgroundColor= "gray";
+                       items.selected = li;
+                       update_p_view(view);
+                       notdisplayed = false;
+                     }
+                     items.list.appendChild(li);
+                   });
+                   }
+                   if (notdisplayed) {
+                     items.p = null;
+                     update_p_view(view);
+                   }
+                });
+    
+   }
+
+
+   function why_not_p(view) {
+     var items = div_views.get(view);
+     
+     if (items.p != null) {
+       evaluate_cmd("whynot-text",items.model,[items.p],function(data){
+                                                                show_whynot_p(items.model,items.p,data[0]);
+                                                               });
+     }
+   }
+
+   function show_whynot_p(model,p,txt) {
+
+     var controls = document.getElementById('controls');
+     var div = document.createElement('div');
+     div.setAttribute("class","why-not-box");
+
+     var title_bar = create_title_bar("Whynot "+p+" ("+model+")",false);
+     div.appendChild(title_bar[0]);
+
+     title_bar[2].onclick = function(){
+                      controls.removeChild(div);
+                      };
+
+     var text_box = document.createElement('div');
+     text_box.setAttribute("class","output-display");
+
+     text = document.createElement('pre');
+     text.innerHTML = scrub_text(txt);
+
+     text_box.appendChild(text);
+     div.appendChild(text_box);
+     controls.appendChild(div);
+   }
+
+   function update_p_view(view) {
+     var items = div_views.get(view);
+
+     if (items.p == null) {
+       items.text.innerHTML = "";
+     } else {
+       evaluate_cmd("production-details",items.model,[items.p],function(data) {
+         items.text.innerHTML = scrub_text(data[0]);
+       });
+     }
+   }
+
+   function procedural_viewer() {
+     if (current_model == null) {
+       alert("Procedural Memory viewer requires a current model.");
+     } else {
+
+       var controls = document.getElementById('controls');
+       var div = document.createElement('div');
+       div.setAttribute("class","procedural-box");
+
+       var title_bar = create_title_bar("Procedural Memory",true);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[1].onclick = function(){
+                              update_p_viewer(div);
+                       };
+
+       title_bar[2].onclick = function(){
+                         controls.removeChild(div);
+                         div_views.delete(div);
+                       };
+
+       var but = document.createElement('button');
+       but.innerHTML="Why not?";
+       but.onclick = function(){
+                         why_not_p(div);
+                     };
+   
+       div.appendChild(but);
+
+       var view = create_list_view();
+
+       div.appendChild(view[0]);
+   
+       div_views.set(div,{"list": view[2], "text": view[1], "model": current_model, "p": null});
+
+       update_p_viewer(div);
+
+       controls.appendChild(div);
+     }
+   }
+
+  </script>
+
+  <style>
+
+   .procedural-box {
+     display: flex;
+     width: 400px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+  </style>
+
+
+  <script> // Buffer viewer
+
+
+   function update_buffer_viewer(view) {
+
+     var items = div_views.get(view);
+
+     evaluate_cmd("buffers",items.model,null,function(data){
+                   var buffers = data[0];
+                   
+                   while(items.list.firstChild) {
+                     items.list.removeChild(items.list.firstChild);
+                   }
+
+                   var notdisplayed = true;
+
+                   if (buffers != null) {
+                     buffers.forEach(function(b){
+                       var li = document.createElement('li');
+                       li.setAttribute("class","select-li");
+
+                       li.innerHTML=b;
+
+                       li.onclick = function() {
+                                li.style.backgroundColor= "gray";
+                                items.buffer = b;
+                                if (items.selected) {
+                                  items.selected.style.backgroundColor = null;
+                                }
+                                items.selected = li;
+                                update_buffer_view(view);
+                                };
+
+                       if (b == items.buffer) {
+                         li.style.backgroundColor= "gray";
+                         items.selected = li;
+                         update_buffer_view(view);
+                         notdisplayed = false;
+                       }
+                       items.list.appendChild(li);
+                     });
+                   }
+                   if (notdisplayed) {
+                     items.buffer = null;
+                     update_buffer_view(view);
+                   }
+                });
+    
+   }
+
+   function update_buffer_view(view) {
+     var items = div_views.get(view);
+
+     if (items.buffer == null) {
+       items.text.innerHTML = "";
+     } else {
+       if (items.display == "contents") {
+         evaluate_cmd("buffer-read",items.model,[items.buffer],function(data) {
+           if (data[0]) {
+             evaluate_cmd("printed-buffer-chunk",items.model,[items.buffer],function(data) {
+               items.text.innerHTML = scrub_text(data[0]);
+             });
+           } else {
+             evaluate_cmd("multi-buffer-p",items.model,[items.buffer],function(data) {
+               if (data[0]) {
+                 evaluate_cmd("get-m-buffer-chunks",items.model,[items.buffer],function(data) {
+                   items.text.innerHTML = "Empty multi-buffer\nPossible chunks are:\n";
+                   if (data[0]) {
+                     data[0].forEach(function(c) {
+                       evaluate_cmd("printed-chunk",items.model,[c],function(data) {
+                         items.text.innerHTML = items.text.innerHTML + scrub_text(data[0]) + "\n";
+                       });
+                     });
+                   }
+                 });
+               } else {
+                 items.text.innerHTML = "Buffer is empty";
+               }
+             });
+          }
+
+         });
+       } else {
+         evaluate_cmd("printed-buffer-status",items.model,[items.buffer],function(data) {
+           items.text.innerHTML = scrub_text(data[0]);
+         });
+       }
+     }
+   }
+
+
+   var buffer_count = 0; // to provide unique names for the radio button groups
+
+   function buffer_viewer() {
+     if (current_model == null) {
+       alert("Buffer viewer requires a current model.");
+     } else {
+
+       var controls = document.getElementById('controls');
+       var div = document.createElement('div');
+       div.setAttribute("class","buffer-box");
+
+       var title_bar = create_title_bar("Buffers",true);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[1].onclick = function(){
+                              update_buffer_viewer(div);
+                       };
+
+       title_bar[2].onclick = function(){
+                         controls.removeChild(div);
+                         div_views.delete(div);
+                       };
+       
+       var select = document.createElement('div');
+       select.setAttribute("class","buffer-bar");
+       
+       var content_div = document.createElement('div');
+       var content_label = document.createElement('label');
+       content_label.setAttribute("for","buffer-content"+buffer_count);
+       content_label.innerHTML="Contents";
+
+       var content = document.createElement('input');
+       content.type = "radio";
+       content.checked = true;
+       content.name = "buffer"+buffer_count;
+       content.id = "buffer-content"+buffer_count;
+       content.onclick = function(){
+                         var items = div_views.get(div);
+                         items.display = "contents";
+                         update_buffer_viewer(div);
+                     };
+   
+       var status_div = document.createElement('div');
+       var status_label = document.createElement('label');
+       status_label.setAttribute("for","buffer-status"+buffer_count);
+       status_label.innerHTML="Status";
+       var status = document.createElement('input');
+       status.type = "radio";
+       status.name = "buffer"+buffer_count;
+       status.id = "buffer-status"+buffer_count;
+       status.onclick = function(){
+                         var items = div_views.get(div);
+                         items.display = "status";
+                         update_buffer_viewer(div);
+                     };
+          
+       buffer_count++;
+
+       content_div.appendChild(content_label);
+       content_label.appendChild(content);
+       status_div.appendChild(status_label);
+       status_label.appendChild(status);
+       select.appendChild(content_div);
+       select.appendChild(status_div);
+
+       div.appendChild(select);
+
+       var view = create_list_view();
+
+       div.appendChild(view[0]);
+   
+       div_views.set(div,{"list": view[2], "text": view[1], "model": current_model, "buffer": null, "display": "contents"});
+
+       update_buffer_viewer(div);
+
+       controls.appendChild(div);
+    }
+  }
+
+
+  </script>
+
+  <style>
+
+   .buffer-box {
+     display: flex;
+     width: 450px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+   .buffer-bar {
+     display: flex;
+     height: 30px;
+     width: 100%;
+     flex-direction: row;
+     overflow: hidden;
+     justify-content: right;
+   }
+  
+  </style>
+
+  <script> // visicon display
+
+   function update_visicon_viewer(view) {
+
+     var items = div_views.get(view);
+
+     evaluate_cmd("printed-visicon",items.model,null,function(data){
+                    items.text.innerHTML = scrub_text(data[0]);
+                  });    
+   }
+
+   function visicon_viewer() {
+     if (current_model == null) {
+       alert("Visicon viewer requires a current model.");
+     } else {
+
+       var controls = document.getElementById('controls');
+       var div = document.createElement('div');
+       div.setAttribute("class","visicon-box");
+
+       var title_bar = create_title_bar("Visicon",true);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[1].onclick = function(){
+                              update_visicon_viewer(div);
+                       };
+
+       title_bar[2].onclick = function(){
+                         controls.removeChild(div);
+                         div_views.delete(div);
+                       };
+
+  
+       var text_box = document.createElement('div');
+       text_box.setAttribute("class","output-display");
+
+       var text = document.createElement('pre');
+
+       text_box.appendChild(text);
+       div.appendChild(text_box);
+   
+       div_views.set(div,{"text": text, "model": current_model});
+
+       update_visicon_viewer(div);
+
+       controls.appendChild(div);
+     }
+   }
+
+  </script>
+
+  <style>
+
+   .visicon-box {
+     display: flex;
+     width: 450px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+  </style>
+
+  <script> // audicon viewer
+
+   function update_audicon_viewer(view) {
+
+     var items = div_views.get(view);
+
+     evaluate_cmd("printed-audicon",items.model,null,function(data){
+                    items.text.innerHTML = scrub_text(data[0]);
+                  });    
+   }
+
+   function audicon_viewer() {
+     if (current_model == null) {
+       alert("Audicon viewer requires a current model.");
+     } else {
+
+       var controls = document.getElementById('controls');
+       var div = document.createElement('div');
+       div.setAttribute("class","audicon-box");
+
+       var title_bar = create_title_bar("Audicon",true);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[1].onclick = function(){
+                              update_audicon_viewer(div);
+                       };
+
+       title_bar[2].onclick = function(){
+                         controls.removeChild(div);
+                         div_views.delete(div);
+                       };
+
+  
+       var text_box = document.createElement('div');
+       text_box.setAttribute("class","output-display");
+
+       var text = document.createElement('pre');
+       text_box.appendChild(text);
+       div.appendChild(text_box);
+   
+       div_views.set(div,{"text": text, "model": current_model});
+
+       update_audicon_viewer(div);
+
+       controls.appendChild(div);
+     }
+   }
+
+
+  </script>
+
+  <style>
+
+   .audicon-box {
+     display: flex;
+     width: 450px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+  </style>
+
+  <script> // the commands and connections tool
+
+
+   function update_cmd_viewer() {
+     get_connections(function(data){
+       div_views.get("connections").data = data;
+       show_connections();
+     });
+   }
+       
+   function update_cmd_documentation(cmd,doc){
+
+     check_cmd(cmd,function(d) {
+       if (d[0]) {
+         doc.innerHTML=d[2];
+       }
+     });
+   }
+
+
+   function show_connections(){
+
+     var connections = div_views.get("connections");
+
+
+     while(connections.con_list.firstChild) {
+       connections.con_list.removeChild(connections.con_list.firstChild);
+     }
+
+     while(connections.cmd_list.firstChild) {
+       connections.cmd_list.removeChild(connections.cmd_list.firstChild);
+     }
+
+     connections.addr.innerHTML="";
+     connections.sent.innerHTML="";
+     connections.rec.innerHTML="";
+     connections.docs.innerHTML="";
+
+     connections.con_selected = null;
+     connections.cmd_selected = null;
+
+
+     connections.data[0].forEach(function(c){
+
+       var li = document.createElement('li');
+       li.setAttribute("class","select-li");
+       li.innerHTML=c[0];
+
+       li.onclick = function() {
+          li.style.backgroundColor= "gray";
+ 
+          if (connections.con_selected) {
+            connections.con_selected.style.backgroundColor = null;
+          }
+  
+          connections.con_selected = li;
+
+          connections.addr.innerHTML=c[1];
+          connections.sent.innerHTML=c[2];
+          connections.rec.innerHTML=c[3];
+
+          while(connections.cmd_list.firstChild) {
+            connections.cmd_list.removeChild(connections.cmd_list.firstChild);
+          }
+
+          connections.docs.innerHTML="";
+
+          if (c[4]) {
+            c[4].forEach(function(cmd){
+              var cli = document.createElement('li');
+              cli.setAttribute("class","select-li");
+              cli.innerHTML=cmd;
+         
+              cli.onclick = function() {
+                cli.style.backgroundColor= "gray";
+ 
+                if (connections.cmd_selected) {
+                  connections.cmd_selected.style.backgroundColor = null;
+                }
+  
+                connections.cmd_selected = cli;
+
+                update_cmd_documentation(cmd,connections.docs);
+              };
+           
+              connections.cmd_list.appendChild(cli);
+            });
+         }
+       };
+
+       connections.con_list.appendChild(li);
+     });
+  }
+
+
+   function cmd_viewer() {
+
+     var connections = div_views.get("connections");
+
+     if (connections) {
+ 
+       if (!connections.open) {
+          connections.open = true;
+          document.getElementById('controls').appendChild(connections.div);
+       }
+     } else {
+       var controls = document.getElementById('controls');
+       var div = document.createElement('div');
+       div.setAttribute("class","connections-box");
+       
+       var title_bar = create_title_bar("Connections & Commands",false);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[1].onclick = update_cmd_viewer;
+       title_bar[2].onclick = function(){
+                         var c = div_views.get("connections");
+                         c.open = false;
+                         controls.removeChild(c.div);
+                       };
+
+       var titles = document.createElement('div');
+       titles.setAttribute("class","connections-titles");
+       var con_title = document.createElement('div');
+       con_title.setAttribute("class","connections-title");
+       con_title.innerHTML="Connections";
+       var cmd_title = document.createElement('div');
+       cmd_title.setAttribute("class","connections-title");
+       cmd_title.innerHTML="Commands";
+
+       titles.appendChild(con_title);
+       titles.appendChild(cmd_title);
+       div.appendChild(titles);
+
+       var display = document.createElement('div');
+       display.setAttribute("class","connections-display");
+       var con_list = document.createElement('div');
+       con_list.setAttribute("class","connections-display-list");
+       var c_display = document.createElement('div');
+       c_display.setAttribute("class","connections-display-list");
+       
+       display.appendChild(con_list);
+       display.appendChild(c_display);
+       div.appendChild(display);
+    
+       var list1 = document.createElement('ul');
+       con_list.appendChild(list1);
+
+       var list2 = document.createElement('ul');
+       c_display.appendChild(list2);
+
+
+       var details = document.createElement('div');
+       details.setAttribute("class","connections-details");
+       var con_details = document.createElement('div');
+       con_details.setAttribute("class","connections-details-box");
+       var cmd_details = document.createElement('div');
+       cmd_details.setAttribute("class","connections-details-box");
+       
+       details.appendChild(con_details);
+       details.appendChild(cmd_details);
+       div.appendChild(details);
+
+       var address = document.createElement('div');
+       address.innerHTML = "Address";
+       con_details.appendChild(address);
+       var com_address = document.createElement('div');
+       com_address.setAttribute("class","connections-detail");
+       var addr = document.createElement('pre');
+       com_address.appendChild(addr);
+       con_details.appendChild(com_address);
+
+       var sent = document.createElement('div');
+       sent.innerHTML = "Sent";
+       con_details.appendChild(sent);
+       var com_sent = document.createElement('div');
+       com_sent.setAttribute("class","connections-detail");
+       var sent = document.createElement('pre');
+       com_sent.appendChild(sent);
+       con_details.appendChild(com_sent);
+
+       var rec = document.createElement('div');
+       rec.innerHTML = "Received";
+       con_details.appendChild(rec);
+       var com_rec = document.createElement('div');
+       com_rec.setAttribute("class","connections-detail");
+       var rec = document.createElement('pre');
+       com_rec.appendChild(rec);
+       con_details.appendChild(com_rec);
+
+       var docs = document.createElement('div');
+       docs.innerHTML = "Documentation";
+       cmd_details.appendChild(docs);
+       var doc_box = document.createElement('div');
+       doc_box.setAttribute("class","connections-docs");
+       var docs = document.createElement('pre');
+       docs.setAttribute("class","doc-text");
+       doc_box.appendChild(docs);
+       cmd_details.appendChild(doc_box);
+
+       div_views.set("connections",{"div": div,"data": null, "con_selected": null,"cmd_selected": null,
+                                    "open": true,"con_list": list1,"cmd_list": list2, "addr": addr,
+                                    "sent": sent, "rec": rec, "docs": docs});
+
+       controls.appendChild(div);
+     }
+
+     update_cmd_viewer();
+   }
+
+
+  </script>
+
+  <style>
+
+   .connections-box {
+     display: flex;
+     width: 450px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+   .connections-display {
+     display: flex;
+     flex-direction: row;
+     height: 55%;
+     width: 100%;
+     overflow: hidden;
+   }
+
+   .connections-details {
+     display: flex;
+     flex-direction: row;
+     height: 45%;
+     width: 100%;
+     overflow: hidden;
+   }
+
+   .connections-details-box {
+     display: flex;
+     flex-direction: column;
+     height: 100%;
+     width: 100%;
+     overflow: hidden;
+   }
+
+   .connections-display-list {
+     display: flex;
+     height: 100%;
+     width: 50%;
+     overflow: auto;
+     margin: 4px;
+     ul {
+       display: flex;
+       overflow: auto;
+       padding: 0;
+     }
+   }
+
+   .connections-titles {
+     display: flex;
+     height: 20px;
+     width: 100%;
+     flex-direction: row;
+     overflow: hidden;
+   }
+
+   .connections-title {
+     display: flex;
+     width: 50%;
+   }
+
+   .connections-detail {
+     display: flex;
+     width: 100%;
+     height: 30px;
+   }
+
+   .connections-docs {
+     display: flex;
+     height: 100%;
+     width: 100%;
+     overflow-y: scroll;
+   }
+
+   .doc-text {
+     white-space: normal;
+   }
+
+  </style>
+
+
+
+  <script> // stepper tool -- uses the environment\stepper-control.lisp functionality
+
+   var tutor_count = null;
+
+   var stepper = null;
+   var step_all_forced = false;
+
+   var tutor_values = null;
+   var tutor_data = null;
+   var tutor_event = null;
+   var tutor_items = null;
+
+
+   function stepper_event(text) {
+     document.getElementById("next-stepper-event").innerHTML=text[1];
+
+     var x = document.getElementsByClassName("title-name");
+
+     var i;
+     for (i = 0; i < x.length; i++) {
+       if (x[i].onclick) {x[i].onclick();}
+     }   
+
+     enable_stepper_buttons();
+   }
+
+
+   function update_stepper_views(){
+
+     var l = document.getElementById("stepper-item-list");
+     var item = null;
+
+     if (l && l.selected) {
+       item = l.selected.innerHTML;
+     } 
+
+
+    if (item) {
+
+     evaluate_cmd("update-stepper",null,[item],function(data){
+       l = document.getElementById("stepper-d2");
+       l.innerHTML=data[0];
+
+       tutor_data = new Map;
+
+       if (current_tutor_mode() && tutor_event) {
+         
+         l = document.getElementById("stepper-d3");
+         var txt ="";
+ 
+         if (data[3]) {
+           data[3].forEach(function (x) {
+             txt = txt + x[0] + ":\n";
+
+             tutor_data.set(x[0],{answer: ( (x[1].startsWith && x[1].startsWith("'") && x[1].endsWith("'")) ? "\""+x[1].slice(1,-1)+"\"" : x[1]), buffer: x[2]});
+           });
+         }
+
+         l.innerHTML=txt;
+         
+         var index = 0;
+
+         l = document.getElementById("stepper-d4");
+
+         var separator = data[2].search(/==>/gm);
+
+         tutor_values = [];
+         tutor_answers = 0;
+
+         var last_buffer = null;
+
+         l.innerHTML=data[2].replace(/=[^&>=)\s]+/gim,function(m,o,s){
+             var txt = "<mark style=\"background: lightblue\" onclick=\"tutor_entry("+index+")\">"+m+"</mark>";
+             index++;
+             var details = tutor_data.get(m);
+             
+
+             if (o < separator) {
+               if (details.buffer) {
+                 last_buffer = m;
+               } else {
+                 details.in_buffer = last_buffer.slice(1);
+               }
+             }
+
+             tutor_values.push([m,(o < separator)]);
+             return(txt);});
+
+         tutor_items = index;
+         tutor_count = 0;
+
+       } else {
+         tutor_items = null;
+
+         l = document.getElementById("stepper-d3");
+         l.innerHTML=data[1];
+         l = document.getElementById("stepper-d4");
+         l.innerHTML=data[2];
+       }
+     });
+   }
+   }
+
+
+   function stepper_update(vals) {
+     document.getElementById("next-stepper-event").innerHTML="";
+     document.getElementById("last-stepper-event").innerHTML=vals[1];
+
+     tutor_event = vals[3];
+
+     document.getElementById("stepper-l1").innerHTML=vals[4];
+     document.getElementById("stepper-l2").innerHTML=vals[5];
+     document.getElementById("stepper-l3").innerHTML=vals[6];
+     document.getElementById("stepper-l4").innerHTML=vals[7];
+     document.getElementById("stepper-d2").innerHTML="";
+     document.getElementById("stepper-d3").innerHTML="";
+     document.getElementById("stepper-d4").innerHTML="";
+
+
+     var l = document.getElementById("stepper-item-list");
+         while(l.firstChild) {
+         l.removeChild(l.firstChild);
+       }
+
+     var first = null;
+
+     var items = vals[2];
+
+     if (items != null) {
+
+       if (tutor_event && current_tutor_mode()) {
+         items = items.slice(0,1);
+       }
+
+       items.forEach(function(i){
+                       var li = document.createElement('li');
+                       li.setAttribute("class","select-li");
+
+                       li.innerHTML=i;
+
+                       if (first == null) {
+                         first = i;
+                         li.style.backgroundColor= "gray";
+                         l.selected = li;
+                       }
+                       
+                       li.onclick = function() {
+
+                                if (l.selected != li) {
+                                li.style.backgroundColor= "gray";
+                                if (l.selected) {
+                                  l.selected.style.backgroundColor = null;
+                                }
+                                l.selected = li;
+                                update_stepper_views(i);
+                                }};
+
+                       l.appendChild(li);
+                     });
+
+        update_stepper_views(first);
+      } else {
+        l.selected = null;
+      }
+   }
+
+   var stepper_event_cmd = null;
+   var stepper_update_cmd = null;
+
+   add_cmd("stepper-event","environment stepper next event command. do not call",stepper_event,function(name){ stepper_event_cmd = name[0];});
+   add_cmd("stepper-update","environment stepper event update command. do not call",stepper_update,function(name){ stepper_update_cmd = name[0];});
+
+
+   function change_stepper_mode () {
+     
+     evaluate_cmd("set-stepper-tutoring",null,[current_stepper_id,current_tutor_mode()],function(x){
+       update_stepper_views();
+     });
+   }
+       
+
+   function current_tutor_mode(){
+     if (document.getElementById('stepper_tutor')) {
+       return(document.getElementById('stepper_tutor').checked);
+     } else {
+       return (false);
+     }
+   }
+
+   function disable_stepper_buttons() {
+     b = document.getElementById('stepper-stop-button');
+     b.disabled = true;
+     b = document.getElementById('stepper-step-button');
+     b.disabled = true;
+     b = document.getElementById('stepper-until-button');
+     b.disabled = true;
+   }
+
+   function enable_stepper_buttons() {
+     b = document.getElementById('stepper-stop-button');
+     b.disabled = false;
+     b = document.getElementById('stepper-step-button');
+     b.disabled = false;
+     b = document.getElementById('stepper-until-button');
+     b.disabled = false;
+   }
+
+
+   function show_stepper(force) {
+   
+     var step_all = document.getElementById("step_all");
+     var starting_step_all = step_all.checked;
+     
+     if (force && !starting_step_all) {
+       step_all.checked = true;
+       step_all_forced = true;
+     } else {
+       step_all_forced = false;
+     }
+
+     evaluate_cmd("start-stepper",null,[step_all.checked,current_tutor_mode(),stepper_event_cmd,stepper_update_cmd],
+                  function(result){
+                    if (result[0]) {
+                     display_stepper(result[1]);
+                    } else {
+                     alert(result[1]);
+                    }
+                  });
+   }
+
+
+   var current_stepper_id = null;
+
+   function display_stepper(id) {
+
+     current_stepper_id = id;
+
+     if (stepper) {
+ 
+      if (stepper.getAttribute("open") != "yes") {
+
+         monitor_cmd("reset-step1","reset-stepper");
+         monitor_cmd("clear-all-start","clear-all-stepper");
+
+         var body = document.getElementById('controls');
+         stepper.setAttribute("open","yes");
+         body.appendChild(stepper);
+      }
+
+     } else {
+
+       var controls = document.getElementById('controls');
+       var div = document.createElement('div');
+       div.setAttribute("class","stepper-box");
+       div.setAttribute("open","yes");
+
+       var title_bar = create_title_bar("Stepper",false);
+
+       div.appendChild(title_bar[0]);
+
+
+       title_bar[2].onclick = function(){
+                         stepper.setAttribute("open","no");
+
+                         stop_monitor("reset-step1","reset-stepper");
+                         stop_monitor("clear-all-start","clear-all-stepper");
+
+
+                         if (step_all_forced) {
+                           step_all.checked = false;
+                         }
+
+                         evaluate_cmd("stop-stepper",null,[current_stepper_id],null);
+
+                         tutor = div_views.get("tutor-entry");
+                         
+                         if (tutor && tutor.open) {
+                           tutor.open = false;
+                           controls.removeChild(tutor.div);
+                         }
+
+                         controls.removeChild(div);
+                       };
+
+
+       var but_div = document.createElement('div');
+       but_div.setAttribute("class","stepper-buttons");
+       
+       var step = document.createElement('button');
+       step.setAttribute("id","stepper-step-button");
+       step.innerHTML="Step";
+       step.disabled = true;
+       step.onclick = function(){
+                         if (tutor_event && current_tutor_mode() && (tutor_items != tutor_count)) {
+                           alert("Cannot step until current tutor instantiation is complete.");
+                         } else {
+                         evaluate_cmd("step-stepper",null,[current_stepper_id],
+                           function(result){
+                             if (result[0]) {
+                              disable_stepper_buttons();
+                             } else {
+                              alert("Stepping failed because: "+result[1]);
+                             }
+                            });
+                         }
+                       };
+       
+       but_div.appendChild(step);
+
+       var stop = document.createElement('button');
+       stop.setAttribute("id","stepper-stop-button");
+       stop.innerHTML="Stop";
+       stop.disabled = true;
+       stop.onclick = function(){
+                         evaluate_cmd("step-stepper",null,[current_stepper_id,true],
+                           function(result){
+                             if (result[0]) {
+                              disable_stepper_buttons();
+                             } else {
+                              alert("Stepping failed because: "+result[1]);
+                             }
+                            });
+                       };
+       
+       but_div.appendChild(stop);
+
+       var until_type = document.createElement('select');
+
+       var s = document.createElement("option");
+       s.value = "time";
+       s.innerHTML = "time";
+       until_type.appendChild(s);
+
+       s = document.createElement("option");
+       s.value = "production";
+       s.innerHTML = "production";
+       until_type.appendChild(s);
+
+       s = document.createElement("option");
+       s.value = "module";
+       s.innerHTML = "module";
+       until_type.appendChild(s);
+
+       until_type.options.selectedIndex = 0;
+
+
+       var until = document.createElement('button');
+       var until_value = document.createElement('input');
+   
+       but_div.appendChild(until);
+       until.setAttribute("id","stepper-until-button");
+       until.innerHTML="Run Until:";
+       until.disabled = true;
+       until.onclick = function(){
+                         if (current_tutor_mode()) {
+                           alert("Cannot use run until while in tutor mode.");
+                         } else {
+                           evaluate_cmd("step-stepper",null,[current_stepper_id,false,until_type.childNodes[until_type.options.selectedIndex].value,until_value.value],
+                           function(result){
+                             if (result[0]) {
+                              disable_stepper_buttons();
+                             } else {
+                              alert("Run Until failed because: "+result[1]);
+                             }
+                            });
+                         }
+                       };
+       
+       but_div.appendChild(until);
+       but_div.appendChild(until_type);
+       but_div.appendChild(until_value);
+
+       var tutor = document.createElement('div');
+       var tutor_box = document.createElement('input');
+       tutor_box.setAttribute('type',"checkbox");
+       tutor_box.setAttribute('id',"stepper_tutor");
+       tutor.innerHTML="Tutor mode";
+       tutor_box.onclick=change_stepper_mode;
+       tutor.appendChild(tutor_box);
+
+       but_div.appendChild(tutor);
+
+       div.appendChild(but_div);
+
+       var next_div = document.createElement('div');
+       next_div.setAttribute("class","stepper-events");
+
+       next = document.createElement('div');
+       next.setAttribute("class","stepper-event-label");
+       next.innerHTML = "Next:";
+       next_div.appendChild(next);
+       
+       next_event = document.createElement('div');
+       next_event.setAttribute("class","stepper-event");
+       next_event_text = document.createElement('pre');
+       next_event_text.setAttribute("id","next-stepper-event");
+       next_event.appendChild(next_event_text);
+       next_div.appendChild(next_event);
+       div.appendChild(next_div);
+
+
+       var last_div = document.createElement('div');
+       last_div.setAttribute("class","stepper-events");
+
+       last = document.createElement('div');
+       last.setAttribute("class","stepper-event-label");
+       last.innerHTML = "Last:";
+       last_div.appendChild(last);
+       
+       last_event = document.createElement('div');
+       last_event.setAttribute("class","stepper-event");
+       last_event_text = document.createElement('pre');
+       last_event_text.setAttribute("id","last-stepper-event");
+       last_event.appendChild(last_event_text);
+       last_div.appendChild(last_event);
+       div.appendChild(last_div);
+
+       var display = document.createElement('div');
+       display.setAttribute("class","stepper-display");
+
+       var pane = document.createElement('div');
+       pane.setAttribute("class","stepper-display-panel");
+       display.appendChild(pane);
+
+       var pane2 = document.createElement('div');
+       pane2.setAttribute("class","stepper-display-panel");
+       display.appendChild(pane2);
+
+       div.appendChild(display);
+
+
+       var heading = document.createElement('div');
+       heading.setAttribute("class","stepper-display-label");
+       heading.setAttribute("id","stepper-l1");
+       pane.appendChild(heading);
+
+       var c_list = document.createElement('div');
+       c_list.setAttribute("class","stepper-display-list");
+       var list = document.createElement('ul');
+       list.setAttribute("id","stepper-item-list");
+       c_list.appendChild(list);
+       pane.appendChild(c_list);
+
+       
+       heading = document.createElement('div');
+       heading.setAttribute("class","stepper-display-label");
+       heading.setAttribute("id","stepper-l2");
+       pane.appendChild(heading);
+
+
+       var c_display = document.createElement('div');
+       c_display.setAttribute("class","stepper-display-text");
+       var text_box = document.createElement('div');
+       text_box.setAttribute("class","stepper-output-display");
+       var text = document.createElement('pre');
+       text.setAttribute("id","stepper-d2");
+       c_display.appendChild(text_box);
+       text_box.appendChild(text);
+       pane.appendChild(c_display);
+
+       var heading = document.createElement('div');
+       heading.setAttribute("class","stepper-display-label");
+       heading.setAttribute("id","stepper-l3");
+       pane2.appendChild(heading);
+
+       c_display = document.createElement('div');
+       c_display.setAttribute("class","stepper-display-text");
+       text_box = document.createElement('div');
+       text_box.setAttribute("class","stepper-output-display");
+       text = document.createElement('pre');
+       text.setAttribute("id","stepper-d3");
+       c_display.appendChild(text_box);
+       text_box.appendChild(text);
+       pane2.appendChild(c_display);
+
+       
+       heading = document.createElement('div');
+       heading.setAttribute("class","stepper-display-label");
+       heading.setAttribute("id","stepper-l4");
+       pane2.appendChild(heading);
+
+
+       c_display = document.createElement('div');
+       c_display.setAttribute("class","stepper-display-text");
+       text_box = document.createElement('div');
+       text_box.setAttribute("class","stepper-output-display");
+       text = document.createElement('pre');
+       text.setAttribute("id","stepper-d4");
+       c_display.appendChild(text_box);
+       text_box.appendChild(text);
+       pane2.appendChild(c_display);
+
+       monitor_cmd("reset-step1","reset-stepper");
+       monitor_cmd("clear-all-start","clear-all-stepper");
+
+       stepper = div;
+       controls.appendChild(div);
+
+     }
+
+     reset_stepper();
+
+     evaluate_cmd("set-stepper-ready",null,[current_stepper_id],null);
+
+   }
+  
+     
+   function clear_all_stepper() {
+     if(stepper) {
+      if (stepper.getAttribute("open") == "yes") {
+     
+        stepper.setAttribute("open","no");
+
+        stop_monitor("reset-step1","reset-stepper");
+        stop_monitor("clear-all-start","clear-all-stepper");
+
+        if (step_all_forced) {
+          step_all.checked = false;
+        }
+
+        document.getElementById('stepper_tutor').checked = false;
+
+        var controls = document.getElementById('controls');
+        controls.removeChild(stepper);
+      }
+     }
+    }
+
+   function reset_stepper() {
+
+    if (stepper) {
+      if (stepper.getAttribute("open") == "yes") {
+  
+       stepper.item = null;
+
+       tutor_event = null;
+       tutor_data = null;
+       tutor_items = null;
+
+       document.getElementById('stepper_tutor').checked = false;
+
+       var i = document.getElementById("stepper-l1");
+       i.innerHTML="";
+       i = document.getElementById("stepper-l2");
+       i.innerHTML="";
+       i = document.getElementById("stepper-l3");
+       i.innerHTML="";
+       i = document.getElementById("stepper-l4");
+       i.innerHTML="";
+       i = document.getElementById("stepper-d2");
+       i.innerHTML="";
+       i = document.getElementById("stepper-d3");
+       i.innerHTML="";
+       i = document.getElementById("stepper-d4");
+       i.innerHTML="";
+       i = document.getElementById("next-stepper-event");
+       i.innerHTML="";
+       i = document.getElementById("last-stepper-event");
+       i.innerHTML="";
+
+       i = document.getElementById("stepper-item-list");
+         while(i.firstChild) {
+         i.removeChild(i.firstChild);
+       }
+      }
+    }
+  }
+
+
+   function update_step_all() {
+     if (stepper) {
+       var step_all = document.getElementById("step_all");
+       evaluate_cmd("set-stepper-step-all",null,[current_stepper_id,step_all.checked],null);
+     }
+   }
+
+   add_cmd("reset-stepper","environment stepper reset monitor. do not call",reset_stepper,null);
+   add_cmd("clear-all-stepper","environment stepper clear-all monitor. do not call",clear_all_stepper,null);
+
+  </script>
+ 
+  <style>
+
+   .stepper-box {
+     display: flex;
+     width: 575px;
+     border: double;
+     height: 400px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+   .stepper-buttons {
+     display: flex;
+     height: 35px;
+     width: 100%;
+     flex-direction: row;
+   }
+
+   .stepper-events {
+     display: flex;
+     height: 75px;
+     width: 100%;
+     flex-direction: row;
+     overflow: hidden;
+   }
+
+   .stepper-event-label {
+     display: flex;
+     height: 100%;
+     width: 20%;
+     overflow: hidden;
+   }
+
+   .stepper-event {
+     display: flex;
+     height: 100%;
+     width: 80%;
+     overflow-x: scroll;
+   }
+
+   .stepper-display {
+     display: flex;
+     flex-direction: row;
+     height: 100%;
+     width: 100%;
+     overflow: hidden;
+   }
+
+   .stepper-display-panel {
+     display: flex;
+     flex-direction: column;
+     height: 100%;
+     width: 50%;
+     overflow: hidden;
+     margin: 3px;
+   }
+
+   .stepper-display-label {
+     display: flex;
+     height: 25px;
+     width: 100%;
+   }
+
+   .stepper-display-list {
+     display: flex;
+     height: 50%;
+     width: 100%;
+     overflow: auto;
+     ul {
+       display: flex;
+       overflow: auto;
+       padding: 0;
+     }
+   }
+
+   .stepper-display-text {
+     display: flex;
+     height: 50%;
+     width: 100%;
+     overflow: hidden;
+   }
+
+   .stepper-output-display {
+     display: flex;
+     overflow: auto;
+     width: 100%;
+     height: 100%;
+   }
+
+  </style>
+
+  <script> // the prompt to get variable bindings in the stepper's tutor mode
+
+  function tutor_entry(index) {
+
+     tutor_entry_window = div_views.get("tutor-entry");
+     var controls = document.getElementById('controls');
+
+     if (tutor_entry_window) {
+ 
+      if (!tutor_entry_window.open) {
+         tutor_entry_window.open = true;
+         controls.appendChild(tutor_entry_window.div);
+      }
+
+     } else {
+
+       var div = document.createElement('div');
+       div.setAttribute("class","tutor-answer-box");
+
+       var title_bar = create_title_bar("Tutor Mode Entry",false);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[2].onclick = function(){
+            tutor_entry_window.open = false;
+            controls.removeChild(div);
+        };
+
+       var prompt = document.createElement('div');
+       prompt.setAttribute("class","tutor-info");
+       
+       div.appendChild(prompt);
+
+       var entry = document.createElement('div');
+       entry.setAttribute("class","tutor-info");
+       var entry_box = document.createElement('input');
+       entry.appendChild(entry_box);
+       div.appendChild(entry);
+
+       var info = document.createElement('div');
+       info.setAttribute("class","tutor-info");
+       
+       div.appendChild(info);
+
+
+       var but_div = document.createElement('div');
+       but_div.setAttribute("class","tutor-info");
+       
+       var hint = document.createElement('button');
+       hint.innerHTML="Hint";
+       
+       but_div.appendChild(hint);
+
+       var help = document.createElement('button');
+       help.innerHTML="Help";
+       
+       but_div.appendChild(help);
+
+       div.appendChild(but_div);
+
+       tutor_entry_window = {"div": div, "open": true, "prompt": prompt, "info": info, "entry_value": entry_box, "hint": hint, "help": help};
+
+       div_views.set("tutor-entry",tutor_entry_window);
+       controls.appendChild(div);
+
+     }
+
+     var variable = tutor_values[index][0];
+     var lhs = tutor_values[index][1];
+     var details = tutor_data.get(variable);
+     
+     tutor_entry_window.prompt.innerHTML = "What is the binding for " + variable + "?";
+     tutor_entry_window.info.innerHTML = "";
+     tutor_entry_window.entry_value.onchange = function() {
+                                                            if ((details.answer.toUpperCase && tutor_entry_window.entry_value.value.toUpperCase &&
+                                                                 (details.answer.toUpperCase() == tutor_entry_window.entry_value.value.toUpperCase())) ||
+                                                                (details.answer == tutor_entry_window.entry_value.value)) {
+                                                             
+                                                              var bindings_text = document.getElementById("stepper-d3").innerHTML;
+                                                              var production_text = document.getElementById("stepper-d4").innerHTML;
+
+                                                              var bind_exp = new RegExp("^"+variable+":$","m");
+                                                              document.getElementById("stepper-d3").innerHTML=bindings_text.replace(bind_exp,variable+": "+details.answer);
+                                                              var matching_string = "<mark style=\"background: lightblue\" onclick=\"tutor_entry("+index+")\">"+variable+"</mark>";
+
+                                                              document.getElementById("stepper-d4").innerHTML=production_text.replace(matching_string,details.answer);
+
+
+                                                              details.answered = true;
+
+                                                              tutor_entry_window.open = false;
+                                                              controls.removeChild(tutor_entry_window.div);
+                                                              tutor_count++;
+
+                                                            } else {
+                                                              tutor_entry_window.info.innerHTML=tutor_entry_window.entry_value.value + " is not the binding for "+ variable;
+                                                            }
+                                                         };
+      
+     tutor_entry_window.entry_value.value="";
+
+     tutor_entry_window.hint.onclick = function() {
+          if (details.answered) {
+            tutor_entry_window.info.innerHTML="Look in the bindings section of the stepper window for the current binding of " + variable;
+          } else if (!lhs) {
+            tutor_entry_window.info.innerHTML="You should find the binding for " + variable + " on the left hand side of the production first";
+          } else if (details.buffer) {
+            tutor_entry_window.info.innerHTML="Use the buffers tool to determine the chunk in the " + variable.slice(1) + " buffer.";
+          } else if (lhs && !details.buffer) {
+            tutor_entry_window.info.innerHTML=variable + " is in a slot of the " + details.in_buffer + " buffer. You can find its value using the buffers tool.";
+          } else {
+            tutor_entry_window.info.innerHTML="No hint is available for this variable.  If it is in a !bind! or !mv-bind! you will need to use the help button to get the answer.";
+          }
+     }
+
+     tutor_entry_window.help.onclick = function() {
+            tutor_entry_window.info.innerHTML="The current binding of " + variable + " is " + details.answer;
+     }
+
+     tutor_entry_window.entry_value.focus();
+
+   }
+
+
+  </script>
+
+
+ 
+  <script>  // Open the experiment window tool in another window/tab
+
+
+   function open_exp_view() {
+     open(document.baseURI+"expwindow.html");
+   }
+   
+  </script>
+
+
+  <style>
+   .tutor-answer-box {
+     display: flex;
+     width: 350px;
+     border: double;
+     height: 200px;
+     flex-direction: column;
+     overflow: hidden;
+     resize: both;
+   }
+
+   .tutor-info {
+     display: flex;
+     height: 40px;
+     width: 100%;
+     flex-direction: row;
+   }
+
+  </style>
+
+
+  
+  <!-- The button display on the Left is just HTML -->
+
+  <style>
+
+   .flex-container {
+     display: flex;
+     flex-direction: row;
+     height: 100%;
+   }
+
+   .button-panel {
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     width: 300px;
+     height: 100%;
+   }
+
+   .button-section {
+     display: flex;
+     flex-direction: column;
+     align-items: center;
+     margin: 10px;
+   }
+
+   .controls {
+     display: flex;
+     flex-direction: row;
+     flex-wrap: wrap;
+     width: 100%;
+     height: 100%;
+   }
+
+  </style>
+
+  <div class="flex-container">
+    <div class="button-panel">
+      <div class="button-section">
+        <div>Current Model</div>
+        <select id="current_model" onchange="change_model()" >
+        </select>  
+      </div>
+
+      <div class="button-section"> 
+        <div>Files</div>
+        <button type="button" onclick="load_model(true)">Load ACT-R Tutorial Model</button>
+        <div> Unit <input type="number"  class="enter" value="1" id="load_unit" min="1" max="8"></div>
+        <button type="button" onclick="load_model(false)">Load ACT-R Tutorial Experiment Code</button>
+      </div>
+  
+      <div class="button-section"> 
+        <div>Control</div>
+        <div>
+          <button type="button" onclick="show_stepper(false)">Stepper</button>
+          <input type="checkbox" id="step_all" onchange="update_step_all()">Step All</input>
+        </div>
+        <button type="button" onclick="show_stepper(true)">Pause</button>
+
+        <button type="button" onclick="show_event_queue()">Event Queue</button>
+        <div>
+          <button type="button" onclick="reset_actr()">Reset</button>
+          <button type="button" onclick="reload_actr()">Reload</button>
+        </div>
+        <div>
+         <button type="button" onclick="run_actr()">Run</button>
+         <input type="number" name="" class="enter" value="10" id="run_time" min="0" width=100>
+        </div>
+        <div><input type="checkbox" id="show_running"  onchange="update_running()">Show Running</input></div>
+        <div id="running-indicator">-------</div>
+      </div>
+
+      <div class="button-section"> 
+        <div>Current Data</div>
+        <button type="button" onclick="dm_viewer()">Declarative</button>
+        <button type="button" onclick="procedural_viewer()">Procedural</button>
+        <button type="button" onclick="buffer_viewer()">Buffers</button>
+        <button type="button" onclick="visicon_viewer()">Visicon</button>
+        <button type="button" onclick="audicon_viewer()">Audicon</button>
+      </div>
+
+      <div class="button-section"> 
+        <div>Miscellaneous</div>
+        <button type="button" onclick="cmd_viewer()">Connections &amp; Commands</button>
+        <button type="button" onclick="open_exp_view()">Open Experiment Window</button>
+    
+     </div>
+
+    </div>
+
+    <div class="controls" id="controls">
+    </div>
+  </div>
+
+  <script type=text/javascript>
+    document.getElementById("show_running").checked = false;
+    document.getElementById("step_all").checked = false;
+  </script>
+
+ </body>
+</html>
+

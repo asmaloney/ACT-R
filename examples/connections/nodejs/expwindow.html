@@ -1,0 +1,161 @@
+<html>
+ <head>
+  <style type="text/css">
+   body, html {
+    margin:0;
+    padding:0;
+    background:white;
+    color:#000;
+   }
+   #canvas { border: 1px solid DarkGray; }
+  </style>
+ </head>
+
+ <body>
+  <div id="canvascontainer">
+   <canvas id="canvas" width="1024" height="768"></canvas>
+  </div>
+
+
+  <script src="/socket.io/socket.io.js"></script>
+
+  <script>
+   var c = document.getElementById("canvas");
+   var canvas = c.getContext("2d");
+
+   function addtext(text,x,y,size,color){
+    canvas.font = size+"px sans-serif";
+    canvas.fillStyle = color;
+    canvas.globalAlpha = 1.0;
+    canvas.textAlign = "start";
+    canvas.textBaseline = "hanging";
+    canvas.fillText(text,x,y);
+   }
+
+   function addbutton(x1,y1,w,h,text,color) {
+    canvas.fillStyle = color;
+    canvas.globalAlpha = 1.0;
+    canvas.fillRect(x1,y1,w,h);
+    canvas.font = "14px sans-serif";
+    canvas.strokeStyle = "black";
+    canvas.lineWidth = 1;
+    canvas.strokeRect(x1,y1,w,h);
+    canvas.textBaseline = "middle";
+    canvas.textAlign = "center";
+    canvas.fillStyle = "black";
+    canvas.fillText(text,x1 + w/2,y1 + h/2);
+   }    
+
+   function addline(x1,y1,x2,y2,color) {
+    canvas.strokeStyle = color;
+    canvas.globalAlpha = 1.0;
+    canvas.lineWidth=2;
+    canvas.beginPath();
+    canvas.moveTo(x1,y1);
+    canvas.lineTo(x2,y2);
+    canvas.stroke();
+   }
+
+   function attentionring(x,y,color){
+    canvas.fillStyle = color;
+    canvas.globalAlpha = .3;
+    canvas.beginPath();
+    canvas.arc(x, y, 15, 0, Math.PI*2, true); 
+    canvas.closePath();
+    canvas.fill();
+   }
+
+   function drawcursor(x,y,color) {
+    cursor = new Path2D();
+    cursor.moveTo(x,y);
+    cursor.lineTo(x,y+15);
+    cursor.lineTo(x+4,y+13);
+    cursor.lineTo(x+7,y+19);
+    cursor.lineTo(x+9,y+19);
+    cursor.lineTo(x+7,y+12);
+    cursor.lineTo(x+12,y+12);
+    cursor.closePath();
+    canvas.fillStyle = "white";
+    canvas.globalAlpha = 1.0;
+    canvas.fill(cursor);
+    canvas.strokeStyle = color;
+    canvas.lineWidth = 2;
+    canvas.stroke(cursor);
+   }
+
+   var socket = io('/expwindow');
+   var items = {};
+   var attn = {};
+
+   function redisplay () {
+    canvas.fillStyle = "white"; 
+    canvas.clearRect(0,0,1024,768);
+    
+    for (var i in items) {
+      item = items[i];
+
+      switch(item[1]) {
+
+        case "text" :
+          addtext(item[4],item[2],item[3],item[6],item[5]);
+        break;
+
+        case "line" :
+          addline(item[2],item[3],item[4],item[5],item[6]);
+        break;
+
+        case "button" :
+          addbutton(item[2],item[3],item[4],item[5],item[6],item[7]);
+        break;
+      }
+    }
+
+    for (var a in attn) {
+      item = attn[a];
+
+      switch(item[1]) {
+
+        case "attend" :
+          attentionring(item[2],item[3],item[4]);
+        break;
+
+        case "cursor" :
+          drawcursor(item[2],item[3],item[4]);
+        break;
+      }
+    }
+   }   
+
+   socket.on('attend',function(msg){
+    attn[msg[0]] = msg;
+    redisplay();
+   });
+
+   socket.on('add',function(msg){
+    items[msg[0]] = msg;
+    redisplay();
+   });
+
+   socket.on('remove',function(msg){
+    delete items[msg];
+    delete attn[msg];
+    redisplay();
+   });
+
+   socket.on('clear',function(msg){
+    items = {};
+    attn = {};
+    redisplay()
+   });
+
+   document.onmousedown = function(evt) {
+    socket.emit('mouse',[evt.clientX,evt.clientY]); 
+   };
+
+   document.onkeypress = function(evt) {
+    socket.emit('down',evt.key); 
+   };
+
+  </script>
+ </body>
+</html>

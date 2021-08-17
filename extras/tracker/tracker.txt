@@ -1,0 +1,15 @@
+This directory contains a module which can be used to allow a model
+to estimate the value for a quantity based on abstract feedback that
+it receives without explicit deliberation.
+
+To use the module this call can be used when there is no current model:
+
+(require-extra "tracker")
+
+The recommended way to use that call is to place it after clear-all
+in any model file which will use this extra.
+
+Details on how it works are in the tracker.doc file and the simple.lisp
+file contains a simple task and model showing how the tracker module
+works (although it is not actually performing the type of task for
+which it is intended).
