@@ -1,8 +1,10 @@
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/asmaloney/ACT-R) ![GitHub](https://img.shields.io/github/license/asmaloney/ACT-R)
+
 # ACT-R
 
 This is a mirror of the official ACT-R distribution found [here](https://act-r.psy.cmu.edu/software/).
 
-The only differences are this README file and I copied the license to [docs/LICENSE.txt](docs/LICENSE.txt) so GitHub would pick it up.
+The only differences are this README file and I copied the license to [LICENSE.txt](LICENSE.txt) so GitHub would pick it up.
 
 Releases are tagged with their version number.
 
