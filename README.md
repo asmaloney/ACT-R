@@ -2,11 +2,13 @@
 
 This is a mirror of the official ACT-R distribution found [here](https://act-r.psy.cmu.edu/software/).
 
-The only difference is this README file.
+The only differences are this README file and I copied the license to [docs/LICENSE.txt](docs/LICENSE.txt) so GitHub would pick it up.
 
 Releases are tagged with their version number.
 
-ACT-R is licensed under the [LGPL](docs/LGPL.txt).
+## License
+
+ACT-R is licensed under the terms of the [LGPL 2.1](docs/LGPL.txt) license ([summary for non-lawyers](https://tldrlegal.com/license/gnu-lesser-general-public-license-v2.1-%28lgpl-2.1%29)).
 
 ## Original readme.txt
 
