@@ -1,4 +1,4 @@
-![GitHub release (latest by date)](https://img.shields.io/github/v/release/asmaloney/ACT-R) ![GitHub](https://img.shields.io/github/license/asmaloney/ACT-R)
+[![GitHub release (latest by date)](https://img.shields.io/github/v/release/asmaloney/ACT-R)](https://github.com/asmaloney/ACT-R/releases/latest) [![GitHub](https://img.shields.io/github/license/asmaloney/ACT-R)](docs/LGPL.txt)
 
 # ACT-R
 
