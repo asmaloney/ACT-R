@@ -7,7 +7,7 @@
 ;;; It is a demonstration of creating and using an
 ;;; image AGI item along with custom visicon features.
 ;;; It assumes that the ref-brain.gif file is in the 
-;;; GUI/AGI-images directory if you use a visible window 
+;;; gui/AGI-images directory if you use a visible window 
 ;;; to see the images.
 ;;;
 ;;; To run the task call the run-test function.  It has one

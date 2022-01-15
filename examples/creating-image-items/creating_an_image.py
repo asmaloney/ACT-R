@@ -3,7 +3,7 @@
 #
 # It is a simple demonstration of creating and using the
 # image AGI item, and it assumes that the smalllogo.gif
-# and ref-brain.gif files are in the GUI/AGI-images directory
+# and ref-brain.gif files are in the gui/AGI-images directory
 # if you use a visible window to see the images.
 #
 # To run the task call the run_test function.  It has one

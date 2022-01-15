@@ -68,25 +68,16 @@ def query(name,buffer,slot,value):
 
 actr.add_command('query-pgoal',query,'Query function for Python goal module')
 
-
 def request (name,buffer,spec):
     chunk_desc = actr.chunk_spec_to_chunk_def(spec)
-    actr.release_chunk_spec(spec)
-
+    
     if chunk_desc:
-        actr.schedule_event_now('create-goal-buffer-chunk',params=[buffer,chunk_desc],module='goal',priority= -100)
+        actr.schedule_set_buffer_chunk('goal',spec,0,module='goal',priority= -1000)
+        actr.schedule_event_now('release-chunk-spec-id',params=[spec],module='goal',priority= -1001,output=False)
     else:
         actr.print_warning('Invalid request made to the goal buffer.')
 
 actr.add_command('request-pgoal',request,'Request function for Python goal module')
-
-
-def create_goal_buffer_chunk (buffer,chunk_desc):
-    name = actr.define_chunks(chunk_desc)[0]
-    actr.schedule_set_buffer_chunk(buffer,name,0,module='goal',priority= -1000)
-    actr.schedule_event_now("purge-chunk",params=[name],module='goal',priority=':min',maintenance=True)
-
-actr.add_command('create-goal-buffer-chunk',create_goal_buffer_chunk,"Command for goal module to put a chunk into the buffer and delete the original.")
 
 
 def buffer_mod(name,buffer,spec):

@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : goal-style-module.lisp
-;;; Version     : 2.0
+;;; Version     : 3.0
 ;;; 
 ;;; Description : Functions that allow one to easily create a module that
 ;;;             : acts like the basic ACT-R goal module/buffer.
@@ -77,6 +77,10 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled in the examples since 
 ;;;             :   it's not needed and results in warnings in SBCL.
+;;; 2021.06.04 Dan [3.0]
+;;;             : * Don't need to create a temp chunk and schedule an event to
+;;;             :   delete that now since the spec can be sent directly to 
+;;;             :   set-buffer-chunk, and remove create-new-buffer-chunk.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -185,7 +189,7 @@
 ;;;  other than free, busy, or error is given then it prints a warning and returns nil.
 ;;;
 ;;;
-;;;  (defun goal-style-request (instance buffer-name chunk-spec &optional (delay 0) (priority -100)))
+;;;  (defun goal-style-request (instance buffer-name chunk-spec &optional (delay 0) (priority -1000)))
 ;;;
 ;;;  This can be used as the request function of a module to allow it to
 ;;;  operate like the goal module i.e. create new chunks in response to a
@@ -209,21 +213,6 @@
 ;;;  priority (10) to ensure that all of the modification is made before a
 ;;;  -<buffer> action in the production clears it. 
 ;;; 
-;;;  (defun create-new-buffer-chunk (buffer-name chunk-description &key (priority -1000)))
-;;;
-;;;  A function that creates a new chunk based on the chunk description in the
-;;;  chunk-description value provided (a list as appropriate for passing as one of 
-;;;  the lists to define-chunks-fct) and schedules that it be placed into the buffer 
-;;;  called buffer-name with the specified priority at the current time.  This is
-;;;  used by goal-style-request to create the chunk, but may be used on its own if
-;;;  one wants to schedule the creation of a chunk in a buffer.  This function 
-;;;  automatically deletes the "original" chunk created after the buffer makes its
-;;;  copy through an event that is not output.
-;;;  The priority is used to schedule a set-buffer-chunk action.  The default 
-;;;  priority is "very low" so that other module's actions will generally take
-;;;  place first, but one exception is the declarative modules retrieval requests
-;;;  which have a priority of -2000 thus by default this new chunk will be a source
-;;;  of spreading activation.
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -253,25 +242,12 @@
        (print-warning "Unknown query state ~s to ~s buffer" value buffer-name)))
     (print-warning "Unknown query ~s ~s to the ~s buffer" slot value buffer-name)))
 
-(defun goal-style-request (instance buffer-name chunk-spec &optional (delay 0) (priority -100))
+(defun goal-style-request (instance buffer-name chunk-spec &optional (delay 0) (priority -1000))
   (declare (ignore instance))
-  (let ((chunk-description (chunk-spec-to-chunk-def chunk-spec)))
-    (if chunk-description
-        (schedule-event-relative delay 'create-new-buffer-chunk 
-                                 :module buffer-name :priority priority 
-                                 :details (concatenate 'string (symbol-name 'create-new-buffer-chunk) " " (symbol-name buffer-name))
-                                 :params (list buffer-name chunk-description))
-      (print-warning "Invalid request made of the ~a buffer." buffer-name))))
-
-(defun create-new-buffer-chunk (buffer-name chunk-description &key (priority -1000))
-  (let ((chunk-name (car (define-chunks-fct (list chunk-description)))))
-    (schedule-set-buffer-chunk buffer-name chunk-name 0 :module buffer-name :priority priority)
-    ;; because the chunk is only being created to be copied into the buffer
-    ;; just get rid of it after that happens to keep the chunk count down 
-    (schedule-event-relative 0 'clean-up-goal-chunk :module :none :output nil 
-                             :priority :min :params (list chunk-name)
-                             :details "Clean-up unneeded chunk" :maintenance t)
-    nil))
+  (if (chunk-spec-to-chunk-def chunk-spec)
+      (schedule-set-buffer-chunk buffer-name chunk-spec delay
+                                 :module buffer-name :priority priority)
+    (print-warning "Invalid request made of the ~a buffer." buffer-name)))
 
 
 (defun clean-up-goal-chunk (name)

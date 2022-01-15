@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : production-compilation.lisp
-;;; Version     : 4.6
+;;; Version     : 5.0
 ;;; 
 ;;; Description : Implements the production compilation mechnaism in ACT-R 6.
 ;;; 
@@ -27,7 +27,7 @@
 ;;;             :     in the composition function, and then remove the clean-up
 ;;;             :     hack at the end.  Not entirely sure, but definitely worth
 ;;;             :     investigating at some point.
-;;;             : [ ] Consider whether dynamic slots which are used between
+;;;             : [X v5.0] Consider whether dynamic slots which are used between
 ;;;             :     two productions (the pre-instantiate case) could remain
 ;;;             :     dynamic by only instantiating for the mapping.  Probably
 ;;;             :     leaves a lot of loose ends, but there are some notes in
@@ -558,6 +558,23 @@
 ;;; 2020.12.01 Dan [4.6]
 ;;;             : * More testing suggests :rir is stable, and with some minor
 ;;;             :   cleanup of the code it's being made available now.
+;;; 2021.01.11 Dan
+;;;             : * Fixed an issue with variabilized slots in actions which are
+;;;             :   set with explicitly bound variables not properly creating
+;;;             :   the new production.
+;;; 2021.02.08 Dan
+;;;             : * Fix a bug where removal of duplicate LHS safe-binds didn't
+;;;             :   remap the variables in RHS safe-eval and output commands
+;;;             :   that were added from p2.
+;;; 2021.02.10 Dan [5.0]
+;;;             : * Remove the pre-instantiation step and put that on the buffer
+;;;             :   mechanisms to handle in the mapping and composing fns when
+;;;             :   needed because it was preventing some desired generality and
+;;;             :   didn't actually work "right" in some cases.
+;;; 2021.02.19 Dan
+;;;             : * When composing the buffer= and buffer+ actions need to 
+;;;             :   exclude dynamic p1 slots whose instantiation is overridden
+;;;             :   with something in p2 (which may also have been dynamic).
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -679,9 +696,12 @@
 ;;; that buffer in the new production.  Cell D1 holds the name of a function to call for
 ;;; performing any extra compatibility test necessary after composability
 ;;; has been determined for the productions, or the value nil if there is
-;;; no additional test necessary for this type.  Cell A2 is a list of the buffers 
-;;; which will be set to this type, or the value :default if this should be the
-;;; default type for any unspecified buffers. 
+;;; no additional test necessary for this type.  Cell E1 is no longer used.
+;;; Cell F1 is t or nil to indicate whether a request-harvest pair of the buffer
+;;; should be dropped out.  Cell G1 holds the name of a function to call to provide
+;;; some details when this type blocked the composition of two productions.  Cell A2
+;;; is a list of the buffers which will be set to this type, or the value :default if 
+;;; this should be the default type for any unspecified buffers. 
 ;;;
 ;;; The table in rows 5-45 specifies the conditions under which the
 ;;; usage of this buffer type in the two productions can be composed.
@@ -1072,7 +1092,7 @@
         (define-parameter :tt :default-value 2.0
           :valid-test 'posnum :warning "a positive number"
           :documentation "Threshold time"))
-  :version "4.6"
+  :version "5.0"
   :documentation "A module that assists the primary procedural module with compiling productions"
   :creation 'create-composition-module
   :reset (list 'reset-production-compilation 'reset-production-compilation2)
@@ -1473,6 +1493,15 @@
 (defun compose-rep-slots (s)
   (second s))
 
+
+
+(defun instantiate-slot-names (rep bindings)
+  (mapcar (lambda (x)
+            (if (chunk-spec-variable-p (spec-slot-name x))
+                (list (spec-slot-op x) (cdr (assoc (spec-slot-name x) bindings)) (spec-slot-value x))
+              x))
+    rep))
+
 (defun compose-productions (module p1 p1-s p2 p2-s)
  
   
@@ -1503,68 +1532,9 @@
            (setf (production-drop-out-buffers-map p2-name) nil)))
     
     
-    ;; To allow for proper mapping of variables and values between
-    ;; p1 and p2 it may be necessary to instantiate slot name variables
-    ;; in dynamic productions.
-    ;;
-    ;; This should only be necessary if a buffer allows for modifications on
-    ;; the RHS of p1 which could be carried over to the conditions of p2 for now, but
-    ;; there may be other conditions that are discovered in the future.
-    ;;
-    ;; The compilation type needs to indicate if that is possible and may also
-    ;; specify a constraint on when to allow it to happen (which presumably is
-    ;; just for efficency because conditional application of this for other 
-    ;; reasons could lead to unusual results in the newly composed production).
-    ;;
     
-    (dolist (b p1-indices)
-      (let* ((comp-type (get-compilation-type-struct (car b) module))
-             (instantiate (comp-buffer-type-pre-instantiate comp-type)))
-        
-        (when instantiate
-          
-          (let* ((c2 (find-if (lambda (x) (and (char= (compose-rep-op x) #\=) (eq (car b) (compose-rep-name x)))) (first p2-s)))
-                 (a1= (find-if (lambda (x) (and (char= (compose-rep-op x) #\=) (eq (car b) (compose-rep-name x)))) (second p1-s)))
-                 
-                 (a1+ (find-if (lambda (x) (and (char= (compose-rep-op x) #\+) (eq (car b) (compose-rep-name x)))) (second p1-s)))
-                 (a1* (find-if (lambda (x) (and (char= (compose-rep-op x) #\*) (eq (car b) (compose-rep-name x)))) (second p1-s)))
-            
-                 ;; if there's a + action that overrides the = and * actions
-                 (mod-vars (if a1+
-                               (mapcan (lambda (x)
-                                         (when (chunk-spec-variable-p (spec-slot-name x))
-                                           (list (spec-slot-name x))))
-                                 (compose-rep-slots a1+))
-                             (append (mapcan (lambda (x)
-                                               (when (chunk-spec-variable-p (spec-slot-name x))
-                                                 (list (spec-slot-name x))))
-                                       (compose-rep-slots a1=))
-                                     (mapcan (lambda (x)
-                                               (when (chunk-spec-variable-p (spec-slot-name x))
-                                                 (list (spec-slot-name x))))
-                                       (compose-rep-slots a1*)))))
-                 (cond-vars (mapcan (lambda (x)
-                                      (when (chunk-spec-variable-p (spec-slot-name x))
-                                        (list (spec-slot-name x))))
-                              (compose-rep-slots c2))))
-
-            (cond ((and mod-vars cond-vars)
-                   (let* ((p1-instantiations (previous-production-bindings (compilation-module-previous module)))
-                          (s1 (remove-if-not (lambda (x) (find x mod-vars)) p1-instantiations :key 'car))
-                          (s2 (remove-if-not (lambda (x) (find x cond-vars)) (production-compilation-instan p2-name) :key 'car)))
-                     
-                     (setf p1-s (replace-variables-special p1-s s1))
-                     (let ((cv (remove-if-not (lambda (x) (find x s1 :key 'cdr)) s2 :key 'cdr)))
-                       (setf p2-s (replace-variables-special p2-s cv)))))
-                  
-                  ((and mod-vars (compose-rep-slots c2))  ;; variables in the modification and any slots tested in c2
-                   (let* ((p1-instantiations (previous-production-bindings (compilation-module-previous module)))
-                          (s1 (remove-if-not (lambda (x) (find x mod-vars)) p1-instantiations :key 'car)))
-                     
-                     (setf p1-s (replace-variables-special p1-s s1))))
-                  (cond-vars
-                   (let ((s2 (remove-if-not (lambda (x) (find x cond-vars)) (production-compilation-instan p2-name) :key 'car)))
-                     (setf p2-s (replace-variables-special p2-s s2)))))))))
+    ;;; The pre-instantiate step was here ...
+    
     
     
     (let* ((mappings nil)
@@ -1581,7 +1551,7 @@
           (when map-fn
             (setf mappings (append (funcall map-fn buffer module p1 p1-s (aif (cdr (assoc buffer p1-indices)) it 0) p2 p2-s (aif (cdr (assoc buffer p2-indices)) it 0)) mappings)))))
       
-        
+      
       ;;; Current mechanism for !safe-bind! on the RHS of P1 is to
       ;;; add its binding as a constant value and drop the bind.
       ;;; also add the bindings for all variables used in the bind's evaluation.      
@@ -1628,10 +1598,10 @@
                        (setf mapping it)))
               
               ;; this doesn't replace constants which is a good thing...
-              
+                            
               (setf p1-s (replace-variables-special p1-s (list mapping)))
               (setf p2-s (replace-variables-special p2-s (list mapping)))
-              
+                            
               (dolist (x mappings)
                 (when (eq (car x) (car mapping))
                   (replace mappings (list (cons (cdr mapping) (cdr x))) :start1 (position x mappings :test 'equal))))))))
@@ -1676,13 +1646,14 @@
         ;;; another variable replace pass...
         
         (let ((duplicate-bindings nil)
-              (existing-bindings nil))
+              (existing-bindings nil)
+              expr)
           
           (dolist (x (first p2-s))
             (when (find (compose-rep-name x) '(safe-bind))
               (push x existing-bindings)
               (push x (first p3-s))))
-        
+          
           (dolist (x (first p1-s))
             (when (find (compose-rep-name x) '(safe-bind))
               (aif (find (second (compose-rep-slots x)) existing-bindings :test 'equalp :key (lambda (y) (second (compose-rep-slots y))))
@@ -1690,21 +1661,31 @@
                    (push x (first p3-s)))))
           
           (when duplicate-bindings
-            (setf p3-s (replace-variables-special p3-s duplicate-bindings))))
+            (setf p3-s (replace-variables-special p3-s duplicate-bindings)))
           
+          ;; These need to respect the duplicate bindings so put them in the loop
+          ;; where that's computed and replace them when needed
           
-        (dolist (x (first p1-s))
-          (when (find (compose-rep-name x) '(safe-eval))
-            (unless (find x (first p3-s) :test 'equal) ;; no need for duplicate evals
-              (push x (first p3-s)))))
-        
-        ;;; Here's where we remove the rhs binds from p1
-        
-        (dolist (x (second p1-s))
-          (when (find (compose-rep-name x) '(#|safe-bind|# safe-eval output #|stop|#)) ;; p1 can't have a stop...
-            (unless (find x (second p3-s) :test 'equal)
-              (push x (second p3-s)))))
-        
+          (dolist (x (first p1-s))
+            (when (find (compose-rep-name x) '(safe-eval))
+              (if duplicate-bindings
+                  (setf expr (replace-variables-for-eval x duplicate-bindings))
+                (setf expr x))
+              (unless (find expr (first p3-s) :test 'equal) ;; no need for duplicate evals
+                (push expr (first p3-s)))))
+          
+          ;; Here's where we remove the rhs binds from p1 (by only adding the evals and outputs
+          ;;  note only duplicate evals are removed not duplicate output because maybe that 
+          ;;  output is important and it's only going to show in the trace anyway
+          
+          (dolist (x (second p1-s))
+            (when (find (compose-rep-name x) '(safe-eval output)) 
+              (if duplicate-bindings 
+                  (setf expr (replace-variables-for-eval x duplicate-bindings))
+                (setf expr x))
+              (unless (and (eq (compose-rep-name x) 'safe-eval)
+                           (find expr (second p3-s) :test 'equal))
+                (push expr (second p3-s))))))
         
         ;; Double check that everything gets bound 
         ;; The assumption being that it had to come from the second
@@ -1880,19 +1861,25 @@
 
 
 (defun replace-variables-special (arg bindings)
-  (let ((res (list nil nil)))
-    (dolist (x (first arg))
-      (push-last (if (char= (compose-rep-op x) #\!)
-                     (replace-variables-for-eval x bindings)
-                   (replace-variables x bindings))
-                 (first res)))
-    (dolist (x (second arg))
-      (push-last (if (or (eq (compose-rep-name x) 'safe-eval)
-                         (eq (compose-rep-name x) 'safe-bind))
-                     (replace-variables-for-eval x bindings)
-                   (replace-variables x bindings))
-                 (second res)))
-    res))
+  (list 
+   (mapcar (lambda (x)
+             (list (car x)
+                   (cond ((eq (compose-rep-name x) 'safe-eval)
+                          (replace-variables-for-eval (second x) bindings))
+                         ((eq (compose-rep-name x) 'safe-bind)
+                          (cons (car (second x)) (replace-variables-for-eval (cdr (second x)) bindings)))
+                         (t
+                          (replace-variables (second x) bindings)))))
+             (first arg))
+   (mapcar (lambda (x)
+             (list (car x)
+                   (cond ((eq (compose-rep-name x) 'safe-eval)
+                          (replace-variables-for-eval (second x) bindings))
+                         ((eq (compose-rep-name x) 'safe-bind)
+                          (cons (car (second x)) (replace-variables-for-eval (cdr (second x)) bindings)))
+                         (t
+                          (replace-variables (second x) bindings)))))
+             (second arg))))
 
 
 
@@ -2285,27 +2272,41 @@
     compose-rep))
 
 
-(defun buffer+-union (a1 a2)
+(defun buffer+-union (a1 a2 bindings)
   (let* ((a2-slots (mapcar 'spec-slot-name (compose-rep-slots a2)))
+         (a2-no-dynamic (mapcar (lambda (x) (if (chunk-spec-variable-p x) 
+                                                (cdr (assoc x bindings))
+                                              x))
+                          a2-slots))
+    
          (a1-remain (remove-if (lambda (x)
                                  (and (eq (spec-slot-op x) '=)
-                                      (find (spec-slot-name x) a2-slots)))
+                                      
+                                      (or
+                                       (find (spec-slot-name x) a2-slots) ;; matches could be static or dynamic
+                                       (find (spec-slot-name x) a2-no-dynamic)
+                                       (and (chunk-spec-variable-p (spec-slot-name x))
+                                            ;; the instantiated slot value matches something in the instantiated p2 slots
+                                            (find (cdr (assoc (spec-slot-name x) bindings)) a2-no-dynamic)))))
                                (compose-rep-slots a1))))
-    (list (first a1) (append a1-remain (compose-rep-slots a2)))))
+    (list (first a1) (append a1-remain (compose-rep-slots a2))))) ;; should this remove-duplicates ?
 
   
 
-(defun buffer=-union (a1 a2) ;; same as above now since + and = are represented the same
-  (buffer+-union a1 a2))
+(defun buffer=-union (a1 a2 bindings) ;; same as above now since + and = are represented the same
+  (buffer+-union a1 a2 bindings))
 
 
-(defun buffer-condition-union (c1 c2 a1) ;; c1 + (c2-a1)
+(defun buffer-condition-union (c1 c2 a1 bindings) ;; c1 + (c2-a1)
   (when (or c1 c2)
     (if (null c2)
         c1
-      (let* ((a1-slots (mapcar 'spec-slot-name (compose-rep-slots a1)))
+      (let* ((a1-slots (replace-variables (mapcar 'spec-slot-name (compose-rep-slots a1)) bindings))
+             
              (c2-remain (remove-if (lambda (x)
-                                     (find (spec-slot-name x) a1-slots))
+                                     (aif (cdr (assoc (spec-slot-name x) bindings)) ;; if it's a variable use the binding
+                                          (find it a1-slots)
+                                          (find (spec-slot-name x) a1-slots)))
                                    (compose-rep-slots c2))))
         (if (null c1)
             (list (first c2) c2-remain)
@@ -2475,13 +2476,13 @@
           
           ;; Write out the stubs for the functions specified
           (when map
-            (format outfile "(defun ~a (module p1 p1-s p2 p2-s buffer)~%)~%" map))
+            (format outfile "(defun ~a (buffer module p1 p1-s p1-index p2 p2-s p2-index)~%)~%" map))
           (when compose 
-            (format outfile "(defun ~a (p1 p1-s p2 p2-s buffer)~%)~%" compose))
+            (format outfile "(defun ~a (buffer module p1 p1-s p1-index p2 p2-s p2-index)~%)~%" compose))
           (when consistency 
-            (format outfile "(defun ~a (buffer module p1 p2)~%)~%" consistency))
+            (format outfile "(defun ~a (buffer module p1 p1-s p1-index p2 p2-s p2-index)~%)~%" consistency))
           (when pre-instan 
-            (format outfile "(defun ~a (buffer-and-index p2)~%)~%" pre-instan))
+            (format outfile "(defun ~a (buffer module p1 p1-s p1-index p2 p2-s p2-index)~%)~%" pre-instan))
           (when whynot 
             (format outfile "(defun ~a (p1-index p2-index failed-function)~%)~%" whynot))
           
@@ -2490,7 +2491,7 @@
           (let (done)
             (dolist (x table)
               (when (and (third x) (not (eq (third x) t)) (not (find (third x) done)))
-                (format outfile "(defun ~a (buffer p1 p2)~%)~%" (third x))
+                (format outfile "(defun ~a (buffer module p1 p1-s p1-index p2 p2-s p2-index)~%)~%" (third x))
                 (push (third x) done))))
           
           ;; Write the buffer definition itself

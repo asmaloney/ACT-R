@@ -98,7 +98,7 @@ if {$standalone_mode == 2} {cd applications}
 
 if {$standalone_mode == 0} {cd "environment"}
 
-if {$standalone_mode != 3} {cd "GUI"}
+if {$standalone_mode != 3} {cd "gui"}
 
 
 

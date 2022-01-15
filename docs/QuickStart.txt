@@ -26,11 +26,11 @@ ACT-R remote interface server.
 Once the ACT-R version information is printed it is ready to use.  
 
 If you would like to use the ACT-R Environment GUI then you can run the
-appropriate application for your OS in the environment directory of the sources
-("Start Environment.exe", "start-environment-osx", or "start environment 
-Linux").  Once the buttons appear in the "Control Panel" window the ACT-R 
-Environment is ready to use.  When you are done with the ACT-R Environment, 
-closing the "Control Panel" window will exit the application.
+appropriate application for your OS in the environment directory:
+"Start Environment.exe", "start-environment-osx", or "start-environment-Linux".
+Once the buttons appear in the "Control Panel" window the ACT-R Environment
+is ready to use.  When you are done with the ACT-R Environment, closing the
+"Control Panel" window will exit the application.
 
 If you are using LispWorks or Allegro Common Lisp with either macOS or 
 Windows or using Clozure Common Lisp with Windows, macOS, or Linux, then you 

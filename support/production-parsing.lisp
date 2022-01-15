@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : production-parsing-support.lisp
-;;; Version     : 5.1
+;;; Version     : 7.0
 ;;; 
 ;;; Description : Functions and code that's used by both p and p* parsing.
 ;;; 
@@ -293,6 +293,19 @@
 ;;;             :   the condition and action parse tables because they must be
 ;;;             :   evaluated in the same order at reset so actually sort them
 ;;;             :   by their slot-name indices. 
+;;; 2021.03.10 Dan [6.0]
+;;;             : * Add explict state free queries for buffers that have a
+;;;             :   request, aren't on the do-not-query list, and don't have a
+;;;             :   query already in the production.
+;;; 2021.04.21 Dan
+;;;             : * There was an incorrect implicit condition for the - slot val
+;;;             :   situation because that added an implicit constraint that 
+;;;             :   it couldn't be nil, but that is valid in that situation.
+;;; 2021.06.04 Dan [7.0]
+;;;             : * The overwrite action now just passes the spec instead of 
+;;;             :   creating a dummy chunk to use since that's valid now.
+;;;             : * If a buffer variable is used in the production then that
+;;;             :   buffer must continue to copy chunks.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -446,6 +459,16 @@
                   (dependencies nil)
                   (rhs-dependencies nil)
                   (unbound-vars nil))
+             
+             
+             ;; set buffers whose variables are used to require copies
+                          
+             (dolist (b (production-lhs-buffers production))
+               (let ((var (buffer-name->variable b)))
+                 (when (or (find var lhs-variables)
+                           (find var rhs-variables))
+                   (buffer-requires-copies b))))
+             
              
              (setf (production-variables production)
                (remove-duplicates (append lhs-variables rhs-variables buffer-variables)))
@@ -803,7 +826,8 @@
                                           (push-last (new-condition :type 'test-slot :value value :test 'safe-chunk-slot-equal :result nil) others)
                                           
                                           ;; if it's '- <slot> nil' then that's got an implicit test the slot must be full
-                                          (awhen (must-be implicit nil) (push it implicit)))
+                                          (when (null value)
+                                            (awhen (must-be implicit nil) (push it implicit))))
                                          
                                          (t
                                           ;; Explicitly this must be a number
@@ -1111,6 +1135,7 @@
                                                                :time-in-ms t
                                                                :module 'procedural
                                                                :priority 90
+                                                               :requested nil
                                                                :output (procedural-rhst prod)))
                             (production-actions production)))
                           (t
@@ -1118,23 +1143,18 @@
                             (lambda () 
                               (multiple-value-bind (spec extended)
                                   (instantiate-chunk-spec spec (production-bindings production))
-                                (let ((dummy-chunk (car (define-chunks-fct (list (chunk-spec-to-chunk-def spec))))))
-                                  (schedule-overwrite-buffer-chunk target dummy-chunk 0
-                                                                   :time-in-ms t
-                                                                   :module 'procedural
-                                                                   :priority 90
-                                                                   :output (procedural-rhst prod))
-                                  (when extended
-                                    (schedule-event-now 'extend-buffer-chunk
-                                                        :module 'procedural
-                                                        :priority 91
-                                                        :params (list target)
-                                                        :output (procedural-rhst prod)))
-                                  (schedule-event-now 'delete-chunk-fct 
+                                (schedule-overwrite-buffer-chunk target spec 0
+                                                                 :time-in-ms t
+                                                                 :module 'procedural
+                                                                 :priority 90
+                                                                 :requested nil
+                                                                 :output (procedural-rhst prod))
+                                (when extended
+                                  (schedule-event-now 'extend-buffer-chunk
                                                       :module 'procedural
-                                                      :params (list dummy-chunk)
-                                                      :priority 89
-                                                      :output nil))))
+                                                      :priority 91
+                                                      :params (list target)
+                                                      :output (procedural-rhst prod)))))
                             (production-actions production)))))
                    (#\-
                     (push-last 
@@ -1245,6 +1265,42 @@
              
              ;; make sure the bindings happen first
              (setf (production-actions production) (append (mapcar 'cdr rhs-binds) (production-actions production))))
+           
+                     ;;; Add explicit state free queries for buffers that are
+           ;;; not on the do-not-query list and have a request or modification request
+           ;;; on the RHS of the production
+           
+           (dolist (y rhs)
+             (let ((buffer (production-statement-target y)))
+               (when (and (or (eql #\+ (production-statement-op y)) 
+                              (eql #\* (production-statement-op y)))
+                          
+                          (not (find buffer (procedural-do-not-query prod)))
+                          (not (find-if (lambda (x)
+                                          (and (eql #\? (production-statement-op x))
+                                               (eql buffer (production-statement-target x))))
+                                        lhs)))
+                 (let* ((spec (define-chunk-spec-fct '(state free)))
+                        (cr (make-cr-condition :type 'query :buffer buffer
+                                               :slot 'state
+                                               :value 'free
+                                               :test spec
+                                               :result t)))
+                   
+                     
+                   ;; these production slots are already set with other values above
+
+                   (push-last cr (production-constants production))
+                   (push-last (list 'query-buffer buffer spec) (production-selection-code production))
+                   
+                   ;; Add the statement to the lhs
+                   (push-last (make-production-statement
+                               :op #\?
+                               :target buffer
+                               :definition (list 'state 'free)
+                               :spec spec)
+                              (production-lhs production))))))
+           
            
            ;;; Add the implicit clears for strict harvesting
            (dolist (y lhs)

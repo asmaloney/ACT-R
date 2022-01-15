@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : chunks.lisp
-;;; Version     : 5.0
+;;; Version     : 6.0
 ;;; 
 ;;; Description : Definition of chunks and the function that manipulate them.
 ;;; 
@@ -577,6 +577,16 @@
 ;;;             :   instead of the undefined value. (Can happen if there isn't
 ;;;             :   a copy function because it only sets the default when needed
 ;;;             :   if there isn't one.)
+;;; 2021.06.03 Dan [6.0]
+;;;             : * Add the option of a "reusable" chunk -- something that is
+;;;             :   safe for a buffer to use repeatedly.  They will still be 
+;;;             :   safe to merge as c2 (it will update the params of c1 but not
+;;;             :   link it to c2), but must be copied if needed to store.
+;;;             :   The make-chunk-reusable command sets it to be such a chunk.
+;;;             : * There's a new command that should be checked by something
+;;;             :   that wants to "store" a chunk that was cleared from a buffer
+;;;             :   or was specified in a request slot: chunk-not-storable.  If
+;;;             :   that is true then a copy should be made and stored instead.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -612,7 +622,8 @@
 (declaim (ftype (function () t) update-chunks-on-the-fly))
 (declaim (ftype (function (t) t) release-name-fct))
 (declaim (ftype (function () t) notify-on-the-fly-hooks))
-
+(declaim (ftype (function (t) t) id-to-chunk-spec))
+(declaim (ftype (function (t) t) chunk-spec-to-chunk-def))
 
 (defvar *chunk-parameters-count* 0)
 
@@ -907,6 +918,152 @@
   (copy-chunk-fct (string->name chunk-name?)))
 
 (add-act-r-command "copy-chunk" 'external-copy-chunk-fct "Returns the name of a chunk which is a copy of the chunk name provided. Params: chunk-name." nil)
+
+
+
+(defun copy-chunk-to-chunk-fct (from-chunk to-chunk)
+  "Copy the from-chunk into the reusable chunk to-chunk"
+  (let ((f-chunk (get-chunk-warn from-chunk))
+        (t-chunk (get-chunk-warn to-chunk)))
+    (when (and f-chunk t-chunk)
+      (bt:with-recursive-lock-held ((act-r-chunk-lock f-chunk))
+        (bt:with-recursive-lock-held ((act-r-chunk-lock t-chunk))
+          
+          (when (act-r-chunk-not-storable t-chunk) ;; it's reusable
+            
+            (let (param-count undefined copy-list)
+              (bt:with-lock-held (*chunk-parameters-lock*)
+                (setf param-count *chunk-parameters-count*)
+                (setf copy-list *chunk-parameters-copy-list*)
+                (setf undefined *chunk-parameter-undefined*))
+              
+              ;; clear the back links from current values of t-chunk
+              
+              (when (update-chunks-on-the-fly)
+                (bt:with-recursive-lock-held ((act-r-model-chunk-lock (current-model-struct)))
+                  (dolist (current (act-r-chunk-slot-value-lists t-chunk))
+                    (let ((old (cdr current)))
+                      (when (chunk-p-fct old)
+                        (let* ((bl (chunk-back-links old))
+                               (new-links (remove (act-r-slot-name (car current)) (gethash to-chunk bl))))
+                          (if new-links
+                              (setf (gethash to-chunk bl) new-links)
+                            (remhash to-chunk bl))))))))
+              
+              
+              ;; copy the values from the other chunk
+              
+              (setf (act-r-chunk-base-name t-chunk) (act-r-chunk-base-name f-chunk))
+              (setf (act-r-chunk-filled-slots t-chunk) (act-r-chunk-filled-slots f-chunk))
+              (setf (act-r-chunk-slot-value-lists t-chunk) (copy-tree (act-r-chunk-slot-value-lists f-chunk)))
+              (setf (act-r-chunk-parameter-values t-chunk) 
+                (make-array param-count :initial-element undefined))
+              
+              ;; Create the back links as needed
+              
+              (when (update-chunks-on-the-fly)
+                (bt:with-recursive-lock-held ((act-r-model-chunk-lock (current-model-struct)))
+                  (dolist (slot (act-r-chunk-slot-value-lists t-chunk))
+                    (let ((slot-name (act-r-slot-name (car slot)))
+                          (old (cdr slot)))
+                      (when (chunk-p-fct old)
+                        
+                        (let ((bl (chunk-back-links old)))
+                          (if (hash-table-p bl)
+                              (push slot-name (gethash to-chunk bl))
+                            (let ((ht (make-hash-table)))
+                              (setf (gethash to-chunk ht) (list slot-name))
+                              (setf (chunk-back-links old) ht)))))))))
+              
+              ;; update its parameters for only those that need it
+              
+              (dolist (param copy-list)
+                (if (act-r-chunk-parameter-copy param)
+                    (let ((current (aref (act-r-chunk-parameter-values f-chunk) (act-r-chunk-parameter-index param))))
+                      (setf (aref (act-r-chunk-parameter-values t-chunk) (act-r-chunk-parameter-index param))
+                        (dispatch-apply (act-r-chunk-parameter-copy param) 
+                                        (if (eq current undefined)
+                                            (chunk-parameter-default param t-chunk)
+                                          current))))
+                  (setf (aref (act-r-chunk-parameter-values t-chunk) (act-r-chunk-parameter-index param))
+                    (dispatch-apply (act-r-chunk-parameter-copy-from-chunk param) from-chunk)))))
+            
+            ;; note the original
+            
+            (setf (act-r-chunk-copied-from t-chunk) from-chunk)
+            
+            to-chunk))))))
+
+(defun external-copy-chunk-to-chunk-fct (from-chunk to-chunk)
+  (copy-chunk-to-chunk-fct (string->name from-chunk) (string->name to-chunk)))
+
+(add-act-r-command "copy-chunk-to-chunk-fct" 'external-copy-chunk-to-chunk-fct "Copy the from-chunk into the reusable chunk to-chunk and returns to-chunk if successful.  Params: from-chunk to-chunk." nil)
+
+
+
+(defun buffer-chunk-spec-to-chunk-list (chunk-spec)
+  "Convert a chunk-spec to a list of slot-value conses"
+  (if (act-r-chunk-spec-p chunk-spec)
+      (unless (or (not (zerop (act-r-chunk-spec-request-param-slots chunk-spec))) ; don't allow request params
+                  (act-r-chunk-spec-slot-vars chunk-spec)
+                  (act-r-chunk-spec-variables chunk-spec)
+                  (not (zerop (act-r-chunk-spec-duplicate-slots chunk-spec)))
+                  (not (zerop (act-r-chunk-spec-negated-slots chunk-spec)))
+                  (not (zerop (act-r-chunk-spec-relative-slots chunk-spec))))
+        (values t
+                (mapcar (lambda (x) 
+                          (unless (keywordp (act-r-slot-spec-name x))
+                            (cons (act-r-slot-spec-name x) (act-r-slot-spec-value x))))
+                  (act-r-chunk-spec-slots chunk-spec))))
+             
+    (awhen (id-to-chunk-spec chunk-spec)
+           (chunk-spec-to-chunk-def it))))
+
+(defun copy-chunk-spec-to-chunk-fct (chunk-spec to-chunk)
+  "Copy the info from the chunk-spec into the reusable chunk to-chunk"
+  (multiple-value-bind (valid slots) (buffer-chunk-spec-to-chunk-list chunk-spec)
+      (when valid
+          (let ((t-chunk (get-chunk-warn to-chunk)))
+            (when t-chunk
+              (bt:with-recursive-lock-held ((act-r-chunk-lock t-chunk))
+          
+                (when (act-r-chunk-not-storable t-chunk) ;; it's reusable
+            
+                  (let (param-count undefined)
+                    (bt:with-lock-held (*chunk-parameters-lock*)
+                      (setf param-count *chunk-parameters-count*)
+                      
+                      (setf undefined *chunk-parameter-undefined*))
+              
+                    ;; clear the back links from current values of t-chunk
+              
+                    (when (update-chunks-on-the-fly)
+                      (bt:with-recursive-lock-held ((act-r-model-chunk-lock (current-model-struct)))
+                        (dolist (current (act-r-chunk-slot-value-lists t-chunk))
+                          (let ((old (cdr current)))
+                            (when (chunk-p-fct old)
+                              (let* ((bl (chunk-back-links old))
+                                     (new-links (remove (act-r-slot-name (car current)) (gethash to-chunk bl))))
+                                (if new-links
+                                    (setf (gethash to-chunk bl) new-links)
+                                  (remhash to-chunk bl))))))))
+              
+                    ;; set initial-values in the copy
+              
+                    (setf (act-r-chunk-base-name t-chunk) nil)
+                    (setf (act-r-chunk-filled-slots t-chunk) 0)
+                    (setf (act-r-chunk-slot-value-lists t-chunk) nil)
+                    (setf (act-r-chunk-parameter-values t-chunk) 
+                      (make-array param-count :initial-element undefined))
+                    
+                    ;; don't need to call copy parameters since there's no chunk to
+                    ;; actually copy from...
+                    
+                    (dolist (s slots)
+                      (awhen (valid-slot-name (car s)) ;; should be valid since was in a spec
+                         (set-c-slot-value t-chunk it (car s) (cdr s)))) ;; handles all the details
+
+                    to-chunk))))))))
 
 
 (defmacro chunk-copied-from (chunk-name)
@@ -1209,7 +1366,35 @@
 
 (add-act-r-command "make-chunk-immutable" 'external-make-chunk-immutable "Prevent any changes to a chunk's contents. Params: chunk-name")
 
+(defun make-chunk-reusable (chunk-name)
+  (let ((c (get-chunk chunk-name)))
+    (when c
+      (bt:with-recursive-lock-held ((act-r-chunk-lock c))
+        (if (and (null (act-r-chunk-not-storable c))
+                 (= (length (act-r-chunk-merged-chunks c)) 1)
+                 (eq chunk-name (car (act-r-chunk-merged-chunks c))))
+            (progn
+              (setf (act-r-chunk-merged-chunks c) nil)
+              (setf (act-r-chunk-not-storable c) t)
+              t)
+          nil)))))
 
+(defun external-make-chunk-reusable (chunk)
+  (make-chunk-reusable (string->name chunk)))
+
+(add-act-r-command "make-chunk-reusable" 'external-make-chunk-reusable "Mark a chunk so that it can be used with copy-to-chunk and not be deletable. Params: chunk-name")
+
+(defun chunk-not-storable (chunk-name)
+  (let ((c (get-chunk chunk-name)))
+    (when c
+      (bt:with-recursive-lock-held ((act-r-chunk-lock c))
+        (act-r-chunk-not-storable c)))))
+
+(defun external-chunk-not-storable (chunk)
+  (chunk-not-storable (string->name chunk)))
+
+(add-act-r-command "chunk-not-storable" 'external-chunk-not-storable "Check if a chunk has been marked as not storable (a reusable chunk). Params: chunk-name")
+  
 
 (defun set-chk-slot-value (c slot-name value) ;; only call when the lock is held
   "internal chunk slot setting function"
@@ -1388,45 +1573,48 @@
       (bt:with-recursive-lock-held ((act-r-chunk-lock c))
         (if (act-r-chunk-immutable c)
             (print-warning "Cannot delete chunk ~s because it is marked as immutable." chunk-name)
-          (let ((tn (act-r-chunk-name c))
-                (model (current-model-struct)))
-            (bt:with-recursive-lock-held ((act-r-model-chunk-lock model))
-              
-              ;; If this chunk has back-links from others to it then warn because
-              ;; that's likely a problem
-              (when (update-chunks-on-the-fly) 
-                (let ((bl (chunk-back-links chunk-name)))
-                  (when (and (hash-table-p bl) (not (zerop (hash-table-count bl))))
-                    (model-warning "Chunk ~s is being deleted but it is still used as a slot value in other chunks." chunk-name))
-                
-                  (when (not (eq tn chunk-name))
-                    (let ((t-bl (chunk-back-links tn)))
-                      (when (and (hash-table-p t-bl) (not (zerop (hash-table-count t-bl))))
-                        (model-warning "Chunk ~s is being deleted but its true name ~s is still used as a slot value in other chunks." chunk-name tn)))))
-                
-                ;; Delete all of the back-links to this chunk
-                
-                (dolist (slots (act-r-chunk-slot-value-lists c))
-                  (let ((slot-name (act-r-slot-name (car slots)))
-                        (old (cdr slots)))
-                    (when (chunk-p-fct old)
-                      (let* ((bl (chunk-back-links old))
-                             (new-links (remove slot-name (gethash tn bl))))
-                        (if new-links
-                            (setf (gethash tn bl) new-links)
-                          (remhash tn bl)))))))
-          
-              ;; Take all the related chunks out of the main hash-table
-          
-              (dolist (x (act-r-chunk-merged-chunks c))
-                (remhash x (act-r-model-chunks-table model))
-                
-                ;; Take them out of the meta-data table too
-                
-                (when (update-chunks-on-the-fly)
-                  (remhash x (act-r-model-chunk-ref-table model)))))
+          (if (act-r-chunk-not-storable c)
+              (print-warning "Cannot delete chunk ~s because it is marked as reusable." chunk-name)
             
-            chunk-name))))))
+            (let ((tn (act-r-chunk-name c))
+                  (model (current-model-struct)))
+              (bt:with-recursive-lock-held ((act-r-model-chunk-lock model))
+                
+                ;; If this chunk has back-links from others to it then warn because
+                ;; that's likely a problem
+                (when (update-chunks-on-the-fly) 
+                  (let ((bl (chunk-back-links chunk-name)))
+                    (when (and (hash-table-p bl) (not (zerop (hash-table-count bl))))
+                      (model-warning "Chunk ~s is being deleted but it is still used as a slot value in other chunks." chunk-name))
+                    
+                    (when (not (eq tn chunk-name))
+                      (let ((t-bl (chunk-back-links tn)))
+                        (when (and (hash-table-p t-bl) (not (zerop (hash-table-count t-bl))))
+                          (model-warning "Chunk ~s is being deleted but its true name ~s is still used as a slot value in other chunks." chunk-name tn)))))
+                  
+                  ;; Delete all of the back-links to this chunk
+                  
+                  (dolist (slots (act-r-chunk-slot-value-lists c))
+                    (let ((slot-name (act-r-slot-name (car slots)))
+                          (old (cdr slots)))
+                      (when (chunk-p-fct old)
+                        (let* ((bl (chunk-back-links old))
+                               (new-links (remove slot-name (gethash tn bl))))
+                          (if new-links
+                              (setf (gethash tn bl) new-links)
+                            (remhash tn bl)))))))
+                
+                ;; Take all the related chunks out of the main hash-table
+                
+                (dolist (x (act-r-chunk-merged-chunks c))
+                  (remhash x (act-r-model-chunks-table model))
+                  
+                  ;; Take them out of the meta-data table too
+                  
+                  (when (update-chunks-on-the-fly)
+                    (remhash x (act-r-model-chunk-ref-table model)))))
+              
+              chunk-name)))))))
 
 (defmacro purge-chunk (chunk-name)
   "delete a chunk and release its name"

@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : vision.lisp
-;;; Version     : 9.1
+;;; Version     : 10.0
 ;;; 
 ;;; Description : Source code for the ACT-R Vision Module.  
 ;;;
@@ -78,6 +78,8 @@
 ;;;                   with respect to checking the real-visual-value i.e. does
 ;;;                   that always get set correctly elsewhere or can that break
 ;;;                   with a custom device?
+;;;             : [ ] Could convert-loc-to-object just return the spec/desc to
+;;;                   avoid creating another chunk?
 ;;; 
 ;;; ----- History ----- [look also at function comments]
 ;;;
@@ -1179,6 +1181,17 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.03.10 Dan [9.2]
+;;;             : * Added a secondary reset function so that the visual-location
+;;;             :   buffer can be on the do-not-query list automatically.
+;;; 2021.06.08 Dan [10.0]
+;;;             : * Force the visual-location buffer to always copy the chunk
+;;;             :   since the name is used in the screen-pos slot of the object
+;;;             :   chunk.
+;;;             : * Updated update-tracking-mth so that it better handles things
+;;;             :   with respect to the visual buffer not always having a new 
+;;;             :   chunk name -- compare the chunk-visicon-entry of the chunk 
+;;;             :   in the buffer to tracked-obj.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 
@@ -1203,7 +1216,6 @@
    (move-attention-latency :accessor move-attn-latency :initarg :move-attn-latency :initform 85)
    (tracked-object :accessor tracked-obj :initarg :tracked-obj :initform nil)
    (tracked-object-last-location :accessor tracked-obj-lastloc :initarg :tracked-obj-lastloc :initform nil)
-   (tracked-object-last-obj :accessor tracked-obj-last-obj :initarg :tracked-obj-last-obj :initform nil)
    (last-scale :accessor last-scale :initarg :last-scale :initform nil)
    (moving-attention :accessor moving-attention :initarg :moving-attention :initform nil)
    (move-allowance :accessor move-allowance :initarg :move-allowance :initform 0)
@@ -1217,7 +1229,6 @@
    (new-span :accessor new-span :initarg :new-span :initform 0.5)
    (default-spec :accessor default-spec :initarg :default-spec :initform nil)  
    (visual-lock :accessor visual-lock :initform nil)
-   (last-obj :accessor last-obj :initform nil) ;; added for use in tracking
    (auto-attend :accessor auto-attend :initform nil)
    (purge-visicon :accessor purge-visicon :initform t)
    (scene-change :accessor scene-change :initform nil)
@@ -1246,7 +1257,7 @@
    )
   (:default-initargs
       :name :VISION
-    :version-string "9.0"))
+    :version-string "10.0"))
 
 
 (defun visual-location-slots (chunk vis-m)
@@ -2317,7 +2328,7 @@
         (bt:with-lock-held ((marker-lock vis-mod))
           (set-current-marker vis-mod loc position)
           (setf (currently-attended vis-mod) nil)
-          (setf (last-obj vis-mod) nil)
+          ;(setf (last-obj vis-mod) nil)
           (set-buffer-failure 'visual :ignore-if-full t :requested requested)
           (setf (attend-failure vis-mod) t)
           
@@ -2336,8 +2347,8 @@
   
   ;; record the object for tracking purposes
   
-  (bt:with-lock-held ((marker-lock vis-mod))
-    (setf (last-obj vis-mod) obj))
+  ;(bt:with-lock-held ((marker-lock vis-mod))
+  ;  (setf (last-obj vis-mod) obj))
   
   ;; update the time-stamp on the finst if it's already attended or
   ;; add a new finst if it's not
@@ -2565,11 +2576,7 @@ Whenever there's a change to the display the buffers will be updated as follows:
              (bt:with-lock-held ((marker-lock vis-mod))
                (setf (tracked-obj vis-mod) current-visicon-entry)
                (setf (tracked-obj-lastloc vis-mod) nil)  ;; don't assume anything about vis-loc buffer at this point
-               (let ((vis-obj (buffer-read 'visual))) ;; should always be empty since the request clears it but
-                 ;; if not record it for later checking
-                 (if (and vis-obj (eq (chunk-copied-from-fct vis-obj) (last-obj vis-mod)))
-                     (setf (tracked-obj-last-obj vis-mod) vis-obj)
-                   (setf (tracked-obj-last-obj vis-mod) nil))))
+               )
              
              (update-tracking-mth vis-mod)
         
@@ -2595,13 +2602,6 @@ Whenever there's a change to the display the buffers will be updated as follows:
     (when modify 
       (mod-buffer-chunk 'visual (list 'screen-pos vis-loc)))))
 
-;;; Record the visual object chunk placed into the buffer
-;;; for later comparisons when needed
-
-(defmethod update-tracking-obj-chunk ((vis-mod vision-module))
-  (bt:with-lock-held ((marker-lock vis-mod))
-    (setf (tracked-obj-last-obj vis-mod) (buffer-read 'visual))))
-
 
 (defgeneric update-tracking-mth (vis-mod &optional from-proc-display)
   (:documentation  "Update the state of a tracked object"))
@@ -2615,7 +2615,7 @@ Whenever there's a change to the display the buffers will be updated as follows:
                             (setf (currently-attended vis-mod) nil)
                             (setf (attend-failure vis-mod) t)
                             (setf (tracked-obj vis-mod) nil)
-                            (setf (last-obj vis-mod) nil)
+                            ;(setf (last-obj vis-mod) nil)
                           
                             (when (tracking-clear vis-mod)
                               (set-current-marker vis-mod nil)))
@@ -2627,136 +2627,140 @@ Whenever there's a change to the display the buffers will be updated as follows:
       (let (tracked
             still-available
             old-loc
-            old-obj
+           ; old-obj
             tracked-loc)
         
         (bt:with-lock-held ((marker-lock vis-mod))
           (setf tracked (tracked-obj vis-mod))
           (setf still-available (find tracked (visicon vis-mod)))
           (setf old-loc (tracked-obj-lastloc vis-mod))
-          (setf old-obj (tracked-obj-last-obj vis-mod)))
+          ;(setf old-obj (last-obj vis-mod))
+          )
         
         (unless still-available
           (tracking-failed))
         
         (setf tracked-loc (chunk-visual-loc tracked))
         
-        (let ((vis-loc-chunk (buffer-read 'visual-location))
-              (vis-obj-chunk (buffer-read 'visual)))
+        (let* ((vis-loc-chunk (buffer-read 'visual-location))
+               (vis-obj-chunk (buffer-read 'visual))
+               (vis-obj-marker (when vis-obj-chunk
+                                 (chunk-visicon-entry vis-obj-chunk))))
           
-        ;; we don't have an old-loc but the one currently in the
-        ;; visual-location buffer is the screen-pos of the old-obj
-        ;; should make that the old-loc.  This is the 5.1 fix.
+          ;; we don't have an old-loc but there is one currently in the
+          ;; visual-location buffer which has the right visicon-entry
+          ;; so assume that's the "right" one -- not quite the same
+          ;; fix as was done with the issue in 5.1 but that situation
+          ;; shouldn't happen now with the way the chunks are created
+          ;; from the visicon
         
-          (when (and (null old-loc) old-obj vis-loc-chunk
-                     (chunk-slot-equal vis-loc-chunk (fast-chunk-slot-value-fct old-obj 'screen-pos)))
+          (when (and (null old-loc) vis-loc-chunk
+                     (eq tracked (chunk-visicon-entry vis-loc-chunk)))
             (setf old-loc vis-loc-chunk))
-        
           
-        
           (let ((new-obj (convert-loc-to-object vis-mod tracked)))
           
             (unless new-obj ;; for some reason we have a location but no object
               (tracking-failed))
           
+            ;; For the following events need to set priority of the buffer setting
+            ;; so that if there's a find-location scheduled but not completed this 
+            ;; happens first, so that the find-loc overwrites.  Thus the priorities > 10.
+          
+            (flet ((set-vis-loc ()
+                                (schedule-set-buffer-chunk 'visual-location tracked-loc 0 :time-in-ms t :module :vision 
+                                                           :output 'high :requested nil :priority 15)
+                                ;; need to make sure the chunk being set in the buffer isn't deleted before it gets there
+                                (when from-proc-display
+                                  (lock-vision vis-mod)
+                                  (schedule-event-now 'unlock-vision :module :vision
+                                                      :destination :vision :priority 14
+                                                      :output nil :maintenance t)))
+                   (mod-vis-loc ()
+                                (schedule-mod-buffer-chunk 'visual-location (chunk-difference-to-chunk-spec tracked-loc vis-loc-chunk) 0
+                                                           :time-in-ms t :module :vision :output 'high :priority 15))
+                   (set-vis-obj ()
+                                (schedule-set-buffer-chunk 'visual new-obj 0 :time-in-ms t :module :vision 
+                                                           :output 'high :requested nil :priority 14)
+                                )
+                   (mod-vis-obj ()
+                                (schedule-mod-buffer-chunk 'visual (chunk-difference-to-chunk-spec new-obj vis-obj-chunk) 0
+                                                           :time-in-ms t :module :vision :output 'high :priority 14)
+                                )
+                   (update-loc (mod)
+                               (schedule-event-now 'update-tracking-loc-chunk :module :vision
+                                                   :destination :vision :params (if mod (list t) nil) :priority 13 :output nil))
+                   )
+            
+              ;;; Make sure there's still a finst on the tracked item
+              
+              (aif (member tracked (finst-lst vis-mod) :key 'id :test 'equal)
+                   (setf (tstamp (first it)) (mp-time-ms))
+                   (add-finst vis-mod tracked))
+            
+              (cond ((and (null vis-loc-chunk)
+                          (null vis-obj-chunk))
+                     ;; Stuff both buffers 
+                     (set-vis-loc)
+                     (set-vis-obj)
+                     (update-loc t)
+                     )
+                  
+                    ((and (null vis-loc-chunk)
+                          (eq vis-obj-marker tracked)) ;; still the right chunk
+                     ;; stuff the new location and modify the visual buffer with the new info
+                     (set-vis-loc)
+                     (mod-vis-obj)
+                     (update-loc t))
+                    
+                    ((null vis-loc-chunk) 
+                     ;; stuff a new location chunk and don't touch the chunk in the visual buffer
+                     (set-vis-loc)
+                     (update-loc nil))
+                  
+                    ((and (eq vis-loc-chunk old-loc)
+                          (null vis-obj-chunk))
+                     ;; Modify the chunk in the visual-location buffer put new obj into visual buffer
+                     (mod-vis-loc)
+                     (set-vis-obj)
+                     (update-loc t)
+                     )
+                  
+                    ((and (eq vis-loc-chunk old-loc)
+                          (eq vis-obj-marker tracked))
+                     ;; Modify both chunks and make sure the obj points to the right loc just to be safe.
+                     (mod-vis-loc)
+                     (mod-vis-obj)
+                     (update-loc t))
+                  
+                    ((eq vis-loc-chunk old-loc) 
+                     ;; just modify the loc and don't know about the visual buffer
+                     (mod-vis-loc))
+                  
+                    ((null vis-obj-chunk) 
+                     ;; Don't know about the vis-loc buffer just put the new object in place 
+                     ;; setting the screen-pos if it isn't
+                   
+                     (unless (chunk-slot-value-fct new-obj 'screen-pos)
+                       (set-chunk-slot-value-fct new-obj 'screen-pos tracked-loc))
+                     
+                     (set-vis-obj)
+                     )
+                  
+                    ((eq vis-obj-marker tracked) 
+                     ;; Just modify the object chunk and set the screen-pos if necessary
+                     
+                     (unless (chunk-slot-value-fct new-obj 'screen-pos)
+                       (set-chunk-slot-value-fct new-obj 'screen-pos tracked-loc))
+                     (mod-vis-obj))
+                  
+                    (t ;; Don't do anything 
+                     ))
+            
             (bt:with-lock-held ((marker-lock vis-mod))
               (set-current-marker vis-mod tracked)
-              (setf (last-obj vis-mod) new-obj))
-          
-          ;; For the following events need to set priority of the buffer setting
-          ;; so that if there's a find-location scheduled but not completed this 
-          ;; happens first, so that the find-loc overwrites.  Thus the priorities > 10.
-          
-          (flet ((set-vis-loc ()
-                              (schedule-set-buffer-chunk 'visual-location tracked-loc 0 :time-in-ms t :module :vision 
-                                                         :output 'high :requested nil :priority 15)
-                              ;; need to make sure the chunk being set in the buffer isn't deleted before it gets there
-                              (when from-proc-display
-                                (lock-vision vis-mod)
-                                (schedule-event-now 'unlock-vision :module :vision
-                                                    :destination :vision :priority 14
-                                                    :output nil :maintenance t)))
-                 (mod-vis-loc ()
-                              (schedule-mod-buffer-chunk 'visual-location (chunk-difference-to-chunk-spec tracked-loc vis-loc-chunk) 0
-                                                         :time-in-ms t :module :vision :output 'high :priority 15))
-                 (set-vis-obj ()
-                              (schedule-set-buffer-chunk 'visual new-obj 0 :time-in-ms t :module :vision 
-                                                         :output 'high :requested nil :priority 14))
-                 (mod-vis-obj ()
-                              (schedule-mod-buffer-chunk 'visual (chunk-difference-to-chunk-spec new-obj vis-obj-chunk) 0
-                                                         :time-in-ms t :module :vision :output 'high :priority 14))
-                 (update-loc (mod)
-                             (schedule-event-now 'update-tracking-loc-chunk :module :vision
-                                                 :destination :vision :params (if mod (list t) nil) :priority 13 :output nil))
-                 (update-obj ()
-                             (schedule-event-now 'update-tracking-obj-chunk :module :vision
-                                                 :destination :vision :params nil :priority 12 :output nil)))
-            
-            ;;; Make sure there's still a finst on the tracked item
-            
-            (aif (member tracked (finst-lst vis-mod) :key 'id :test 'equal)
-                 (setf (tstamp (first it)) (mp-time-ms))
-                 (add-finst vis-mod tracked))
-            
-            (cond ((and (null vis-loc-chunk)
-                        (null vis-obj-chunk))
-                   ;; Stuff both buffers and then update the obj with the buffer-chunk's name
-                   (set-vis-loc)
-                   (set-vis-obj)
-                   (update-loc t)
-                   (update-obj))
-                  
-                  ((and (null vis-loc-chunk)
-                        (eq vis-obj-chunk old-obj))
-                   ;; stuff the new location and modify the visual buffer with the new info
-                   (set-vis-loc)
-                   (mod-vis-obj)
-                   (update-loc t))
-                  
-                  ((null vis-loc-chunk) 
-                   ;; stuff a new location chunk and don't touch the chunk in the visual buffer
-                   (set-vis-loc)
-                   (update-loc nil))
-                  
-                  ((and (eq vis-loc-chunk old-loc)
-                        (null vis-obj-chunk))
-                   ;; Modify the chunk in the visual-location buffer put new obj into visual buffer
-                   (mod-vis-loc)
-                   (set-vis-obj)
-                   (update-loc t)
-                   (update-obj))
-                  
-                  ((and (eq vis-loc-chunk old-loc)
-                        (eq vis-obj-chunk old-obj))
-                   ;; Modify both chunks and make sure the obj points to the right loc just to be safe.
-                   (mod-vis-loc)
-                   (mod-vis-obj)
-                   (update-loc t))
-                  
-                  ((eq vis-loc-chunk old-loc) 
-                   ;; just modify the loc and don't know about the visual buffer
-                   (mod-vis-loc))
-                  
-                  ((null vis-obj-chunk) 
-                   ;; Don't know about the vis-loc buffer just put the new object in place 
-                   ;; setting the screen-pos if it isn't
-                   
-                   (unless (chunk-slot-value-fct new-obj 'screen-pos)
-                     (set-chunk-slot-value-fct new-obj 'screen-pos tracked-loc))
-                   
-                   (set-vis-obj)
-                   (update-obj))
-                  
-                  ((eq vis-obj-chunk old-obj) 
-                   ;; Just modify the object chunk and set the screen-pos if necessary
-                   
-                   (unless (chunk-slot-value-fct new-obj 'screen-pos)
-                     (set-chunk-slot-value-fct new-obj 'screen-pos tracked-loc))
-                   (mod-vis-obj))
-                  
-                  (t ;; Don't do anything 
-                   ))))))
-    nil)))
+              ))))
+    nil))))
 
 
 ;;; REMOVE-TRACKING      [Method]
@@ -2770,7 +2774,6 @@ Whenever there's a change to the display the buffers will be updated as follows:
 (defmethod remove-tracking ((vis-mod vision-module))
   (bt:with-lock-held ((marker-lock vis-mod))
     (setf (tracked-obj-lastloc vis-mod) nil)
-    (setf (tracked-obj-last-obj vis-mod) nil)
     (setf (tracked-obj vis-mod) nil))
   (change-state vis-mod :exec 'FREE))
 
@@ -2787,7 +2790,7 @@ Whenever there's a change to the display the buffers will be updated as follows:
       ;; handles clof and current-marker
     (set-current-marker vis-mod nil)
     
-    (setf (last-obj vis-mod) nil)
+    ;(setf (last-obj vis-mod) nil)
   
     (setf (loc-failure vis-mod) nil)
     (setf (attend-failure vis-mod) nil)
@@ -3018,6 +3021,12 @@ Whenever there's a change to the display the buffers will be updated as follows:
   
   (make-instance 'vision-module))
 
+(defun dont-query-vis-loc (vis-mod)
+  (declare (ignore vis-mod))
+  (sgp :do-not-query visual-location)
+  (buffer-requires-copies 'visual-location))
+
+
 (defun reset-vision-module (vis-mod)
   
   (reset-pm-module vis-mod)
@@ -3027,7 +3036,7 @@ Whenever there's a change to the display the buffers will be updated as follows:
     (setf (current-marker vis-mod) nil)
     (setf (clof vis-mod) nil)
     
-    (setf (last-obj vis-mod) nil)
+    ;(setf (last-obj vis-mod) nil)
       
     (setf (loc-failure vis-mod) nil)
     (setf (attend-failure vis-mod) nil)
@@ -3411,7 +3420,7 @@ Whenever there's a change to the display the buffers will be updated as follows:
   :version (version-string (make-instance 'vision-module))
   :documentation "A module to provide a model with a visual attention system"
   :creation 'create-vision-module
-  :reset 'reset-vision-module
+  :reset '(reset-vision-module dont-query-vis-loc)
   :query 'query-vision-module
   :request 'pm-module-request
   :params 'params-vision-module

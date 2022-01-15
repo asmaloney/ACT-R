@@ -1,3 +1,5 @@
+; ACT-R tutorial unit7 task for investigating production
+; compilation modeling issues.
 
 (load-act-r-model "ACT-R:tutorial;unit7;production-compilation-issues-model.lisp")
 
@@ -54,7 +56,7 @@
 (defun game-over ()
   *task-over*)
 
-(defun pcomp-issues-trials (&optional (n 200) (reset t) (output t))
+(defun pcomp-issues-trials (&optional (n 150) (reset t) (output t))
   (when reset (reset))
   (setf *window* (open-exp-window "Compilation task" :visible nil))
   (setf *times* nil)
@@ -63,31 +65,23 @@
   (setf *exp-length* n)
   (present-next-trial)
   (install-device *window*)
-  ; (add-act-r-command "compilation-issues-game-over" 'game-over "Test for the production compilation issues game being over")
+  
   (add-act-r-command "compilation-issues-response" 'respond-to-key-press "Compilation issues key press response monitor")
   (monitor-act-r-command "output-key" "compilation-issues-response")
   
-  ; This would be the direct translation of the old task code:
-  ; (run-until-condition "compilation-issues-game-over")
-  ; However, the performance hit for that is immense
-  ; if it has to go out through the dispatcher.
- 
-  ; So, instead will just take the run it a long enough
-  ; time approach since the screen stops updating once
-  ; the task is over and the model will have nothing to do.
-  
+  ; just run the model a long time to let it finish the trial
   (run 20000)
   
   (remove-act-r-command-monitor "output-key" "compilation-issues-response")
   (remove-act-r-command "compilation-issues-response")
-  ; (remove-act-r-command "compilation-issues-game-over")
+
   (analyze-results output))
 
 (defun pcomp-issues-game (n &optional show-games)
-  (let ((scores (make-list 20 :initial-element 0))
-        (times (make-list 20 :initial-element 0)))
+  (let ((scores (make-list 15 :initial-element 0))
+        (times (make-list 15 :initial-element 0)))
     (dotimes (i n)
-      (let ((result (pcomp-issues-trials 200 t show-games)))
+      (let ((result (pcomp-issues-trials 150 t show-games)))
         (setf scores (mapcar '+ scores (first result)))
         (setf times (mapcar '+ times (second result)))))
     (format t "~%Average Score of ~d trials~%" n)

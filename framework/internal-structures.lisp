@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : internal-structures.lisp
-;;; Version     : 4.0
+;;; Version     : 5.0
 ;;; 
 ;;; Description : All of the defstructs for the internal code.
 ;;; 
@@ -460,6 +460,11 @@
 ;;;             : * Added slots to the act-r-output struct to indicate
 ;;;             :   whether the :v and :cmdt are using the same stream to fix
 ;;;             :   a problem when they're set to the same file.
+;;; 2021.06.03 Dan [5.0]
+;;;             : * Buffer struct has a slot to store the name of the reusable
+;;;             :   chunk that it will use, and a flag to indicate if it should
+;;;             :   use it.
+;;;             : * Chunk struct has a slot to indicate not storable.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -515,7 +520,9 @@
   (lock (bt:make-recursive-lock "buffer-lock"))
   index
   mask
-  module-instance)
+  module-instance
+  reuse-chunk
+  reuse?)
 
 (defstruct act-r-chunk-spec 
   "The internal structure of a chunk-spec"
@@ -570,6 +577,7 @@
   merged-chunks
   parameter-values
   immutable
+  not-storable
   (lock (bt:make-recursive-lock)))
 
 (defstruct act-r-chunk-parameter

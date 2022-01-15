@@ -23,7 +23,7 @@
                     (small large -.8))
   
     
-  (set-buffer-chunk 'imaginal (first (define-chunks (category unknown))))
+  (set-buffer-chunk 'imaginal '(category unknown))
   
   ;; Declare the goal buffer chunk-type usage which is going to be set from
   ;; outside of the model.

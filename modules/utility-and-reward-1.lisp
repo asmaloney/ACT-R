@@ -181,6 +181,9 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.07.09 Dan
+;;;             : * Fixed a bug with spp setting :at because it was returning
+;;;             :   the time in ms instead of seconds.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; General:
 ;;;
@@ -744,9 +747,12 @@
              
              (:at
               (setf value (safe-seconds->ms value 'spp))
-              (set-parameter production-at :at
-                             (nonneg value)
-                             "a positive number"))
+              (let ((res (set-parameter production-at :at
+                                        (nonneg value)
+                                        "a positive number")))
+                (if (numberp res)
+                    (ms->seconds res)
+                  res)))
              
              (:reward ;; can't use set-parameter because I need to test
                       ;; the original value before setting it but the

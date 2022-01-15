@@ -1,3 +1,5 @@
+# ACT-R tutorial unit7 task for investigating production
+# compilation modeling issues.
 
 import actr
 
@@ -67,7 +69,7 @@ def present_next_trial():
 def game_over():
     return task_over
 
-def trials(n=200,reset=True,output=True):
+def trials(n=150,reset=True,output=True):
     global responses,task_over,exp_length,window
 
     if reset:
@@ -80,29 +82,24 @@ def trials(n=200,reset=True,output=True):
     exp_length = n
     present_next_trial()
     actr.install_device(window)
-#    actr.add_command('compilation-issues-game-over',game_over,"Test for the production compilation issues game being over")
+
     actr.add_command('compilation-issues-response',respond_to_key_press,"Compilation issues key press response monitor")
     actr.monitor_command('output-key','compilation-issues-response')
 
-#   this is how the original ran: actr.run_until_condition('compilation-issues-game-over')
-#   however performing a remote call for each event to determine the stopping point
-#   takes almost 2 orders of magnitude longer to run!  So instead just run 
-#   sufficiently long to complete the task and assume the model stops when there's
-#   nothing left to do.
+    # Just run a long time to have the model perform the task
 
     actr.run(20000)
 
     actr.remove_command_monitor('output-key','compilation-issues-response')
     actr.remove_command ('compilation-issues-response')
-#    actr.remove_command ('compilation-issues-game-over')
 
     return analyze_results(output)
 
 def game(n,show_games=False):
-    scores = [0]*20
-    times = [0]*20
+    scores = [0]*15
+    times = [0]*15
     for i in range(n):
-        r = trials(200,True,show_games)
+        r = trials(150,True,show_games)
         scores = list(map(lambda x,y: x + y,scores,r[0]))
         times = list(map(lambda x,y: x + y,times,r[1]))
     print("Average Score of %d trials"%n)

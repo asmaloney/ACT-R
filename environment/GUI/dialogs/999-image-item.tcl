@@ -4,7 +4,7 @@
 # file.
 # 
 # All of the .gif files to display must be available in the
-# GUI/AGI-images directory.
+# gui/AGI-images directory.
 #
 # Mouse clicks on the item will be handled in the virtual
 # view on the Lisp side just like they would if the window
@@ -56,7 +56,7 @@ add_agi_handler remove agi_image_remove_handler
 
 
 # When an image cmd is sent read the file from the images
-# directory in GUI and add it to the window's canvas.
+# directory in gui and add it to the window's canvas.
 # The params sent are:  item_name x y file_name width height
 
 proc agi_image_creation_handler {cmd win coords params} {

@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : model.lisp
-;;; Version     : 4.0
+;;; Version     : 4.1
 ;;; 
 ;;; Description : Functions that support the abstraction of a model
 ;;; 
@@ -234,6 +234,17 @@
 ;;;             :   reset (much faster than redefining every time).
 ;;;             : * Any chunk defined at creation time is automatically marked
 ;;;             :   as immutable.
+;;; 2021.06.03 Dan [4.1]
+;;;             : * Set the reuse? flag for the buffers at init and reset and
+;;;             :   create the initial chunk for the buffer.
+;;; 2021.06.09 Dan
+;;;             : * Don't actually create the initial chunk for the buffers
+;;;             :   because that's a big performance hit for tasks that run a
+;;;             :   non-learning short trial & reset approach (fan model in the
+;;;             :   tutorial for example).
+;;; 2021.07.16 Dan
+;;;             : * Only set the reuse? flag if it's not a multi buffer.
+;;;             : * Delete-model wasn't returning t on success.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -474,6 +485,10 @@
                                          (dolist (x (act-r-buffer-queries buffer))
                                            (add-buffer-query x))
                                          
+                                         (unless (act-r-buffer-multi buffer)
+                                           (setf (act-r-buffer-reuse? buffer) t))
+                                         (setf (act-r-buffer-reuse-chunk buffer) nil) 
+                                         
                                          (setf (gethash buffer-name (act-r-model-buffers new-model)) buffer)))
                                      
                                      *buffers-table*))))
@@ -481,6 +496,21 @@
                       (dolist (m (act-r-model-module-instances new-model))
                         (reset-module m))
                       
+                      #|;; Just set all the reusable slots to nil above instead of setting
+                           them here (here because naming module needs to be reset) since
+                           it's an added cost to do this for a buffer that doesn't get a chunk in the
+                           model
+
+                      (bt:with-lock-held ((act-r-model-buffers-lock new-model))
+                        
+                        (maphash (lambda (buffer-name buffer-struct)
+                                   (let ((name (new-name-fct (format nil "~s-buffer-chunk" buffer-name))))
+                                     (define-chunks-fct (list name))
+                                     (make-chunk-reusable name)
+                                     (setf (act-r-buffer-reuse-chunk buffer-struct) name)))
+                                 
+                                 (act-r-model-buffers new-model)))
+                      |#
                       
                       (maphash (lambda (parameter-name parameter)
                                  (sgp-fct (list parameter-name (act-r-parameter-default parameter))))
@@ -648,12 +678,29 @@
                                          (dolist (x (act-r-buffer-queries buffer))
                                            (add-buffer-query x))
                                          
+                                         (unless (act-r-buffer-multi buffer)
+                                           (setf (act-r-buffer-reuse? buffer) t))
+                                         (setf (act-r-buffer-reuse-chunk buffer) nil)
+
                                          (setf (gethash buffer-name (act-r-model-buffers new-model)) buffer)))
                                      
                                      *buffers-table*))))
                       
                       (dolist (m (act-r-model-module-instances new-model))
                         (reset-module m))
+                      
+                      #| ;; Create the reusable chunks for the buffers (needs to happen after naming module reset)
+                      
+                      (bt:with-lock-held ((act-r-model-buffers-lock new-model))
+                        
+                        (maphash (lambda (buffer-name buffer-struct)
+                                   (let ((name (new-name-fct (format nil "~s-buffer-chunk" buffer-name))))
+                                     (define-chunks-fct (list name))
+                                     (make-chunk-reusable name)
+                                     (setf (act-r-buffer-reuse-chunk buffer-struct) name)))
+                                 
+                                 (act-r-model-buffers new-model)))
+                      |#
                       
                       (maphash (lambda (parameter-name parameter)
                                  (sgp-fct (list parameter-name (act-r-parameter-default parameter))))
@@ -711,25 +758,26 @@
    (let ((mp (current-mp)))
      (if model-name
          (aif (cdr (assoc model-name (bt:with-lock-held ((meta-p-models-lock mp)) (meta-p-models mp))))
-              (bt:with-lock-held (*define-model-lock*)
-                (unwind-protect
-                    (let ((*current-act-r-model* it))
-                      (setf *defining-model* t)
-
-                      (delete-all-model-events mp model-name) 
-                      
-                      (dolist (c (bt:with-lock-held ((meta-p-component-lock (current-mp))) (meta-p-component-list (current-mp))))
-                        (when (act-r-component-model-destroy (cdr c))
-                          (funcall (act-r-component-model-destroy (cdr c)) (act-r-component-instance (cdr c)) model-name)))
-                      
-                      (unwind-protect 
-                          (dolist (module-name (all-module-names))
-                            (delete-module module-name))
+              (progn
+                (bt:with-lock-held (*define-model-lock*)
+                  (unwind-protect
+                      (let ((*current-act-r-model* it))
+                        (setf *defining-model* t)
                         
-                        (remove-model model-name)))
-                  
-                  t)
-                (setf *defining-model* nil))
+                        (delete-all-model-events mp model-name) 
+                        
+                        (dolist (c (bt:with-lock-held ((meta-p-component-lock (current-mp))) (meta-p-component-list (current-mp))))
+                          (when (act-r-component-model-destroy (cdr c))
+                            (funcall (act-r-component-model-destroy (cdr c)) (act-r-component-instance (cdr c)) model-name)))
+                        
+                        (unwind-protect 
+                            (dolist (module-name (all-module-names))
+                              (delete-module module-name))
+                          
+                          (remove-model model-name)))
+                    t)
+                  (setf *defining-model* nil))
+                t)
            (print-warning "No model named ~S in current meta-process." model-name))
        (print-warning "No current model to delete.")))))
 
@@ -877,6 +925,11 @@
                              (add-buffer-query x))
                            ;; clear any flags
                            (setf (act-r-buffer-flags buffer) nil)
+                           
+                           (unless (act-r-buffer-multi buffer)
+                             (setf (act-r-buffer-reuse? buffer) t))
+                           ;; Clear any previous name (will be created as needed)
+                           (setf (act-r-buffer-reuse-chunk buffer) nil)
                            ))
                        (act-r-model-buffers model)))
             
@@ -884,6 +937,19 @@
             
             (dolist (module-name (act-r-model-module-instances model))
               (reset-module module-name))
+            
+            #| ;; Create the reusable chunks for the buffers (needs to happen after naming module reset)
+                      
+            (bt:with-lock-held ((act-r-model-buffers-lock model))
+              
+              (maphash (lambda (buffer-name buffer-struct)
+                         (let ((name (new-name-fct (format nil "~s-buffer-chunk" buffer-name))))
+                           (define-chunks-fct (list name))
+                           (make-chunk-reusable name)
+                           (setf (act-r-buffer-reuse-chunk buffer-struct) name)))
+                       
+                       (act-r-model-buffers model)))
+            |#
             
             (maphash (lambda (parameter-name parameter)
                        (sgp-fct (list parameter-name (act-r-parameter-default parameter))))

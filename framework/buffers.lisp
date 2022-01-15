@@ -13,14 +13,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : buffers.lisp
-;;; Version     : 6.0
+;;; Version     : 7.0
 ;;; 
 ;;; Description : Functions that define the operation of buffers.
 ;;; 
 ;;; Bugs        : 
 ;;;
 ;;; To do       : [] Finish documentation.
-;;;               [] Investigate the copy sematics and probably optimize things.
+;;;               [7.0] Investigate the copy sematics and probably optimize things.
 ;;;               [] Crazy idea - why not treat buffer parameters the same as
 ;;;                  chunk parameters and allow them to be user defined?
 ;;;               [] Have all the schedule-* functions allow a details keyword.
@@ -483,6 +483,31 @@
 ;;;             :   for SBCL as was done previously).
 ;;;             : * Removed an unnecessary case in a cond to avoid a warning
 ;;;             :   from SBCL.
+;;; 2021.06.03 Dan [7.0]
+;;;             : * Use the reusable chunks associated with each buffer now to
+;;;             :   avoid having to copy a chunk unless the buffer has had its
+;;;             :   reuse? flag cleared.
+;;; 2021.06.09 Dan
+;;;             : * The reusable chunk needs to be created the first time it's
+;;;             :   needed since doing so at reset for all buffers ends up 
+;;;             :   costing more than it saves in short models e.g. fan without
+;;;             :   PM that's run for one trial and reset repeatedly which would
+;;;             :   save copying 2 (goal and retrieval) but the cost for filling
+;;;             :   all at the start is creating 11 chunks.
+;;; 2021.06.14 Dan
+;;;             : * Added buffer-slot-value to get the value of the chunk in a
+;;;             :   buffer as a single action instead of having to do buffer-
+;;;             :   read and then chunk-slot-value.
+;;; 2021.06.25 Dan
+;;;             : * Allow set-buffer-chunk and overwrite-buffer-chunk to take a
+;;;             :   list as well as a true chunk-spec and then create the spec
+;;;             :   from the list.
+;;; 2021.07.15 Dan
+;;;             : * Fixed the external overwrite-buffer-chunk command so that it
+;;;             :   has requested default to nil like the internal function.
+;;; 2021.09.10 Dan
+;;;             : * Buffer-slot-value-external needs to encode the result so that
+;;;             :   strings are handled properly.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -965,6 +990,24 @@
 (add-act-r-command "buffer-read" 'buffer-read-external "Return the name of the chunk in a buffer. Params: buffer-name." nil)
 
 
+(defun buffer-slot-value (buffer-name slot-name)  
+   (verify-current-model
+    "buffer-slot-value called with no current model."
+    (let ((buffer (buffer-instance buffer-name)))
+      (if buffer 
+          (bt:with-recursive-lock-held ((act-r-buffer-lock buffer))
+            (awhen (act-r-buffer-chunk buffer)
+                   (fast-chunk-slot-value-fct it slot-name)))
+        (print-warning "Buffer-slot-value called with an invalid buffer name ~S" buffer-name)))))
+
+(defun buffer-slot-value-external (buffer-name slot-name)
+  (encode-string (buffer-slot-value (string->name buffer-name) (string->name slot-name))))
+
+(add-act-r-command "buffer-slot-value" 'buffer-slot-value-external "Return the value of a slot for the chunk in a buffer. Params: buffer-name slot-name." nil)
+
+
+
+
 (defun schedule-buffer-read (buffer-name time-delta &key (module :none) (priority 0) (output t) time-in-ms)
    (verify-current-model
     "schedule-buffer-read called with no current model."
@@ -1242,15 +1285,18 @@
 (add-act-r-command "set-buffer-failure" 'set-buffer-failure-external "Set the failure flag for a buffer. Params: buffer-name {< ignore-if-full , requested >}")
 
 
-(defun set-buffer-chunk (buffer-name chunk-name &optional (requested t))
-  "Forces a copy unless it's a multi-buffer and this chunk is in the set"
+(defun set-buffer-chunk (buffer-name chunk-name-or-spec &optional (requested t))
    (verify-current-model
     "set-buffer-chunk called with no current model."
-    (let ((buffer (buffer-instance buffer-name)))
+    (let ((buffer (buffer-instance buffer-name))
+          (chunk-or-spec (or (get-chunk chunk-name-or-spec)
+                             (and (act-r-chunk-spec-p chunk-name-or-spec) chunk-name-or-spec)
+                             (id-to-chunk-spec chunk-name-or-spec)
+                             (and (listp chunk-name-or-spec) (define-chunk-spec-fct chunk-name-or-spec)))))
       (cond ((null buffer)
              (print-warning "set-buffer-chunk called with an invalid buffer name ~S" buffer-name))
-            ((null (get-chunk chunk-name))
-             (print-warning "set-buffer-chunk called with an invalid chunk name ~S" chunk-name))
+            ((null chunk-or-spec)
+             (print-warning "set-buffer-chunk called with an invalid chunk name or chunk-spec ~S" chunk-name-or-spec))
             (t
              (bt:with-recursive-lock-held ((act-r-buffer-lock buffer))
                (when (act-r-buffer-chunk buffer)
@@ -1258,13 +1304,48 @@
                
                (setf (act-r-buffer-requested buffer) requested)
                
-               (let ((copy-name (if (or (act-r-buffer-copy buffer) (chunk-buffer-set-invalid chunk-name) (null (gethash chunk-name (act-r-buffer-chunk-set buffer))))
-                                    (copy-chunk-fct chunk-name)
-                                  chunk-name)))
-                 (when (and (show-copy-buffer-trace) (not (eq copy-name chunk-name)))
+                              
+               (let ((new-name (if (act-r-chunk-spec-p chunk-or-spec)
+                                   (cond ((act-r-buffer-reuse? buffer)
+                                          
+                                          (unless (act-r-buffer-reuse-chunk buffer)
+                                            (let ((name (new-name-fct (format nil "~s-chunk" (act-r-buffer-name buffer)))))
+                                              (define-chunks-fct (list name))
+                                              (make-chunk-reusable name)
+                                              (setf (act-r-buffer-reuse-chunk buffer) name)))                                          
+                                          
+                                          (aif (copy-chunk-spec-to-chunk-fct chunk-or-spec (act-r-buffer-reuse-chunk buffer))
+                                               it
+                                               (progn
+                                                 (print-warning "set-buffer-chunk could not convert given chunk-spec to a chunk")
+                                                 (return-from set-buffer-chunk nil))))
+                                         (t
+                                          (aif (chunk-spec-to-chunk-def chunk-or-spec)
+                                               (car (define-chunks-fct (list it)))
+                                               (progn
+                                                 (print-warning "set-buffer-chunk failed to convert chunk-spec to a chunk")
+                                                 (return-from set-buffer-chunk nil)))))
+                                 
+                                 (cond ((act-r-buffer-reuse? buffer)
+                                        (unless (act-r-buffer-reuse-chunk buffer)
+                                            (let ((name (new-name-fct (format nil "~s-chunk" (act-r-buffer-name buffer)))))
+                                              (define-chunks-fct (list name))
+                                              (make-chunk-reusable name)
+                                              (setf (act-r-buffer-reuse-chunk buffer) name)))
+                                        (copy-chunk-to-chunk-fct chunk-name-or-spec (act-r-buffer-reuse-chunk buffer)))
+                                       ((or (act-r-buffer-copy buffer) 
+                                            (chunk-buffer-set-invalid chunk-name-or-spec) 
+                                            (null (gethash chunk-name-or-spec (act-r-buffer-chunk-set buffer))))
+                                        (copy-chunk-fct chunk-name-or-spec))
+                                       (t
+                                        chunk-name-or-spec)))))
+                 
+                 (when (and (show-copy-buffer-trace) 
+                            (not (act-r-chunk-spec-p chunk-or-spec)) 
+                            (not (eq new-name chunk-name-or-spec)))
                    (schedule-event-now nil :maintenance t :module 'buffer 
                                        :priority :max 
-                                       :details (concatenate 'string "Buffer " (string buffer-name) " copied chunk " (string chunk-name) " to " (string copy-name)) 
+                                       :details (concatenate 'string "Buffer " (string buffer-name) " copied chunk " (string chunk-name-or-spec) " to " (string new-name)) 
                                        :output 'medium))
                
                ;; setting the buffer clears the failure flag
@@ -1274,22 +1355,25 @@
                    (bt:with-lock-held ((act-r-model-buffers-lock m))
                      (setf (act-r-model-buffer-state m) (logior (act-r-model-buffer-state m) (act-r-buffer-mask buffer)))))
                  
-               (setf (act-r-buffer-chunk buffer) copy-name))))))))
+                 (setf (act-r-buffer-chunk buffer) new-name))))))))
 
-(defun set-buffer-chunk-external (buffer-name chunk-name &optional (requested t))
-  (set-buffer-chunk (string->name buffer-name) (string->name chunk-name) requested))
+(defun set-buffer-chunk-external (buffer-name chunk-name-or-spec &optional (requested t))
+  (set-buffer-chunk (string->name buffer-name) (if (listp chunk-name-or-spec) (decode-string-names chunk-name-or-spec)  (string->name chunk-name-or-spec)) requested))
 
-(add-act-r-command "set-buffer-chunk" 'set-buffer-chunk-external "Copy a chunk directly into a buffer. Params: buffer-name chunk-name {requested?}")
+(add-act-r-command "set-buffer-chunk" 'set-buffer-chunk-external "Copy a chunk into a buffer or create a chunk given a chunk-spec. Params: buffer-name chunk-name-or-spec {requested?}")
 
 
-(defun schedule-set-buffer-chunk (buffer-name chunk-name time-delta &key (module :none) (priority 0) (output 'low) (requested t) time-in-ms)
+(defun schedule-set-buffer-chunk (buffer-name chunk-name-or-spec time-delta &key (module :none) (priority 0) (output 'low) (requested t) time-in-ms)
    (verify-current-model
     "schedule-set-buffer-chunk called with no current model."
     (let ((buffer (buffer-instance buffer-name)))
       (cond ((null buffer)
              (print-warning "schedule-set-buffer-chunk called with an invalid buffer name ~S" buffer-name))
-            ((null (get-chunk chunk-name))
-             (print-warning "schedule-set-buffer-chunk called with an invalid chunk name ~S" chunk-name))
+            ((null (or (get-chunk chunk-name-or-spec)
+                       (act-r-chunk-spec-p chunk-name-or-spec)
+                       (id-to-chunk-spec chunk-name-or-spec)
+                       (listp chunk-name-or-spec)))
+             (print-warning "schedule-set-buffer-chunk called with an invalid chunk name or chunk-spec ~S" chunk-name-or-spec))
             ((not (numberp time-delta))
              (print-warning "schedule-set-buffer-chunk called with time-delta that is not a number: ~S" time-delta))
             ((and (not (numberp priority)) (not (eq priority :max)) (not (eq priority :min)))
@@ -1299,44 +1383,93 @@
                                       :time-in-ms time-in-ms
                                       :module module
                                       :priority priority 
-                                      :params (if requested
-                                                  (list buffer-name chunk-name)
-                                                (list buffer-name chunk-name nil))
-                                      :output output))))))
+                                      :params (list buffer-name chunk-name-or-spec requested)
+                                      :details (if (symbolp chunk-name-or-spec) ;; it's a chunk name
+                                                   (if requested
+                                                       (concatenate 'string (string 'set-buffer-chunk) " "
+                                                         (string buffer-name) " "
+                                                         (string chunk-name-or-spec))
+                                                     (concatenate 'string (string 'set-buffer-chunk) " "
+                                                       (string buffer-name) " "
+                                                       (string chunk-name-or-spec) " NIL"))
+                                                 (if requested
+                                                       (concatenate 'string (string 'set-buffer-chunk-from-spec) " "
+                                                         (string buffer-name) " "
+                                                         )
+                                                     (concatenate 'string (string 'set-buffer-chunk-from-spec) " "
+                                                       (string buffer-name) "  NIL")))
+                                                 
+                                                 :output output))))))
 
 
 (defun external-schedule-set-buffer-chunk (buffer-name chunk-name time-delta &optional params)
   (multiple-value-bind (valid ol) 
       (process-options-list params 'schedule-set-buffer-chunk '(:module :priority :output :requested :time-in-ms))
     (when valid 
-      (apply 'schedule-set-buffer-chunk (string->name buffer-name) (string->name chunk-name) time-delta (convert-options-list-items ol '(:module :priority :output) nil)))))
+      (apply 'schedule-set-buffer-chunk (string->name buffer-name) (if (listp chunk-name) (decode-string-names chunk-name) (string->name chunk-name)) time-delta (convert-options-list-items ol '(:module :priority :output) nil)))))
 
 (add-act-r-command "schedule-set-buffer-chunk" 'external-schedule-set-buffer-chunk 
-                   "Create an event to occur at the specified amount of time from now to place a chunk in a buffer. Params: buffer-name chunk-name time-delay { <  module,  priority,  output, time-in-ms, requested > }."
+                   "Create an event to occur at the specified amount of time from now to place a chunk in a buffer. Params: buffer-name chunk-name-or-spec time-delay { <  module,  priority,  output, time-in-ms, requested > }."
                    nil)
 
 
 
-(defun overwrite-buffer-chunk (buffer-name chunk-name &optional (requested nil))
-  "Also forces a copy of the chunk unless it's in the set of a multi-buffer"
+(defun overwrite-buffer-chunk (buffer-name chunk-name-or-spec &optional (requested nil))
   (verify-current-model
    "overwrite-buffer-chunk called with no current model."
-   (let ((buffer (buffer-instance buffer-name)))
+   (let ((buffer (buffer-instance buffer-name))
+         (chunk-or-spec (or (get-chunk chunk-name-or-spec)
+                            (and (act-r-chunk-spec-p chunk-name-or-spec) chunk-name-or-spec)
+                            (id-to-chunk-spec chunk-name-or-spec)
+                            (and (listp chunk-name-or-spec) (define-chunk-spec-fct chunk-name-or-spec)))))
      (cond ((null buffer)
             (print-warning "overwrite-buffer-chunk called with an invalid buffer name ~S" buffer-name))
-           ((null (get-chunk chunk-name))
-            (print-warning "overwrite-buffer-chunk called with an invalid chunk name ~S" chunk-name))
+           ((null chunk-or-spec)
+             (print-warning "overwrite-buffer-chunk called with an invalid chunk name or chunk-spec ~S" chunk-name-or-spec))
            (t
             (bt:with-recursive-lock-held ((act-r-buffer-lock buffer))
               
               (setf (act-r-buffer-requested buffer) requested)
-              (let ((copy-name (if (or (act-r-buffer-copy buffer) (chunk-buffer-set-invalid chunk-name) (null (gethash chunk-name (act-r-buffer-chunk-set buffer))))
-                                   (copy-chunk-fct chunk-name)
-                                 chunk-name)))
-                (when (and (show-copy-buffer-trace) (not (eq copy-name chunk-name)))
+              
+              (let ((copy-name (if (act-r-chunk-spec-p chunk-or-spec)
+                                   (cond ((act-r-buffer-reuse? buffer)
+                                          (unless (act-r-buffer-reuse-chunk buffer)
+                                            (let ((name (new-name-fct (format nil "~s-chunk" (act-r-buffer-name buffer)))))
+                                              (define-chunks-fct (list name))
+                                              (make-chunk-reusable name)
+                                              (setf (act-r-buffer-reuse-chunk buffer) name)))
+                                          (aif (copy-chunk-spec-to-chunk-fct chunk-or-spec (act-r-buffer-reuse-chunk buffer))
+                                               it
+                                               (progn
+                                                 (print-warning "overwrite-buffer-chunk could not convert given chunk-spec to a chunk")
+                                                 (return-from overwrite-buffer-chunk nil))))
+                                         (t
+                                          (aif (chunk-spec-to-chunk-def chunk-or-spec)
+                                               (car (define-chunks-fct (list it)))
+                                               (progn
+                                                 (print-warning "overwrite-buffer-chunk failed to convert chunk-spec to a chunk")
+                                                 (return-from overwrite-buffer-chunk nil)))))
+                                 
+                                 (cond ((act-r-buffer-reuse? buffer)
+                                        (unless (act-r-buffer-reuse-chunk buffer)
+                                            (let ((name (new-name-fct (format nil "~s-chunk" (act-r-buffer-name buffer)))))
+                                              (define-chunks-fct (list name))
+                                              (make-chunk-reusable name)
+                                              (setf (act-r-buffer-reuse-chunk buffer) name)))
+                                        (copy-chunk-to-chunk-fct chunk-name-or-spec (act-r-buffer-reuse-chunk buffer)))
+                                       ((or (act-r-buffer-copy buffer) 
+                                            (chunk-buffer-set-invalid chunk-name-or-spec) 
+                                            (null (gethash chunk-name-or-spec (act-r-buffer-chunk-set buffer))))
+                                        (copy-chunk-fct chunk-name-or-spec))
+                                       (t
+                                        chunk-name-or-spec)))))
+                
+                (when (and (show-copy-buffer-trace) 
+                            (not (act-r-chunk-spec-p chunk-or-spec)) 
+                            (not (eq copy-name chunk-name-or-spec)))
                   (schedule-event-now nil :maintenance t :module 'buffer 
                                       :priority :max 
-                                      :details (concatenate 'string "Buffer " (string buffer-name) " copied chunk " (string chunk-name) " to " (string copy-name)) 
+                                      :details (concatenate 'string "Buffer " (string buffer-name) " copied chunk " (string chunk-name-or-spec) " to " (string copy-name)) 
                                       :output 'medium))
                 
                 (let ((m (current-model-struct)))
@@ -1347,33 +1480,48 @@
 
 
 
-(defun overwrite-buffer-chunk-external (buffer-name chunk-name &optional (requested t))
-  (overwrite-buffer-chunk (string->name buffer-name) (string->name chunk-name) requested))
+(defun overwrite-buffer-chunk-external (buffer-name chunk-name &optional (requested nil))
+  (overwrite-buffer-chunk (string->name buffer-name) (if (listp chunk-name) (decode-string-names chunk-name) (string->name chunk-name)) requested))
 
-(add-act-r-command "overwrite-buffer-chunk" 'overwrite-buffer-chunk-external "Put a chunk in a buffer without clearing the buffer first. Params: buffer-name chunk-name {requested}")
+(add-act-r-command "overwrite-buffer-chunk" 'overwrite-buffer-chunk-external "Put a chunk in a buffer without clearing the buffer first. Params: buffer-name chunk-name-or-spec {requested}")
 
 
 
-(defun schedule-overwrite-buffer-chunk (buffer-name chunk-name time-delta &key (module :none) (priority 0) (output 'low) (requested nil) time-in-ms)
+(defun schedule-overwrite-buffer-chunk (buffer-name chunk-name-or-spec time-delta &key (module :none) (priority 0) (output 'low) (requested nil) time-in-ms)
    (verify-current-model
     "overwrite-buffer-chunk called with no current model."
     (let ((buffer (buffer-instance buffer-name)))
       (cond ((null buffer)
              (print-warning "schedule-overwrite-buffer-chunk called with an invalid buffer name ~S" buffer-name))
-            ((null (get-chunk chunk-name))
-             (print-warning "schedule-overwrite-buffer-chunk called with an invalid chunk name ~S" chunk-name))
+            ((null (or (get-chunk chunk-name-or-spec)
+                       (act-r-chunk-spec-p chunk-name-or-spec)
+                       (id-to-chunk-spec chunk-name-or-spec)
+                       (listp chunk-name-or-spec)))
+             (print-warning "schedule-overwrite-buffer-chunk called with an invalid chunk name or spec ~S" chunk-name-or-spec))
             ((not (numberp time-delta))
              (print-warning "schedule-overwrite-buffer-chunk called with a non-number time-delta: ~S" time-delta))
             ((and (not (numberp priority)) (not (eq priority :max)) (not (eq priority :min)))
              (print-warning "schedule-overwrite-buffer-chunk called with an invalid priority ~S" priority))
             (t
-             (schedule-event-relative time-delta  'overwrite-buffer-chunk 
+             (schedule-event-relative time-delta 'overwrite-buffer-chunk 
                                       :time-in-ms time-in-ms
                                       :module module
                                       :priority priority 
-                                      :params (list buffer-name chunk-name requested)
-                                      :details (when requested
-                                                   (format nil "~s ~s ~s" 'overwrite-buffer-chunk buffer-name chunk-name))
+                                      :params (list buffer-name chunk-name-or-spec requested)
+                                      :details (if (symbolp chunk-name-or-spec) ;; it's a chunk name
+                                                   (if requested
+                                                       (concatenate 'string (string 'overwrite-buffer-chunk) " "
+                                                         (string buffer-name) " "
+                                                         (string chunk-name-or-spec))
+                                                     (concatenate 'string (string 'overwrite-buffer-chunk) " "
+                                                       (string buffer-name) " "
+                                                       (string chunk-name-or-spec) " NIL"))
+                                                 (if requested
+                                                       (concatenate 'string (string 'overwrite-buffer-chunk-from-spec) " "
+                                                         (string buffer-name) " "
+                                                         )
+                                                     (concatenate 'string (string 'overwrite-buffer-chunk-from-spec) " "
+                                                       (string buffer-name) "  NIL")))
                                       :output output))))))
 
 
@@ -1382,7 +1530,7 @@
   (multiple-value-bind (valid ol) 
       (process-options-list params 'schedule-overwrite-buffer-chunk '(:module :priority :output :requested :time-in-ms))
     (when valid 
-      (apply 'schedule-overwrite-buffer-chunk (string->name buffer-name) (string->name chunk-name) time-delta (convert-options-list-items ol '(:module :priority :output) nil)))))
+      (apply 'schedule-overwrite-buffer-chunk (string->name buffer-name) (if (listp chunk-name) (decode-string-names chunk-name) (string->name chunk-name)) time-delta (convert-options-list-items ol '(:module :priority :output) nil)))))
 
 (add-act-r-command "schedule-overwrite-buffer-chunk" 'external-schedule-overwrite-buffer-chunk 
                    "Create an event to occur at the specified amount of time from now to place a chunk in a buffer without clearing the buffer first. Params: buffer-name chunk-name time-delay { <  module,  priority,  output, time-in-ms, requested > }."
@@ -1730,6 +1878,20 @@
       (and (listp x) 
            (let ((b (buffers))) 
              (every (lambda (y) (find y b)) x)))))
+
+;;; Turn off the no-copy mechanism for a buffer.
+;;; Should be done during reset (called during the model definition
+;;; is also fine).
+
+(defun buffer-requires-copies (buffer-name)
+  (let ((buffer (buffer-instance buffer-name)))
+    (if (null buffer)
+        (print-warning "buffer-requires-copies called with an invalid buffer name ~S" buffer-name)
+        
+      (bt:with-recursive-lock-held ((act-r-buffer-lock buffer))
+        (setf (act-r-buffer-reuse? buffer) nil)
+        t))))
+                                         
 
 #|
 This library is free software; you can redistribute it and/or

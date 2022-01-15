@@ -1,3 +1,6 @@
+; ACT-R tutorial unit 3 code for a simple task to 
+; investigate potential perceptual and motor issues
+; with models.
 
 (load-act-r-model "ACT-R:tutorial;unit3;perceptual-motor-issues-model.lisp")
  
@@ -37,7 +40,7 @@
     (add-act-r-command "pm-issue-display" 'display-prompt 
                        "Perceptual-motor issues task prompt display")
         
-    (schedule-event-relative time "pm-issue-display" :params (list window task) :time-in-ms t)
+    (schedule-event-relative time "pm-issue-display" :params (list window task) :time-in-ms t :output 'medium)
     
     (setf *response* nil) 
     (setf *response-time* nil)

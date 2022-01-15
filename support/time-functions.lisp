@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : time-functions.lisp
-;;; Version     : 1.0
+;;; Version     : 2.0
 ;;; 
 ;;; Description : Macro to execute code and record the time spent in specified
 ;;;             : functions.
@@ -34,6 +34,12 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled doc since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.04.21 Dan [2.0]
+;;;             : * Added an alterative version that just records the cumulative
+;;;             :   time and a count instead of the individual ones becasue the
+;;;             :   extra storage requirements may affect the timing.
+;;; 2021.06.14 Dan
+;;;             : * Don't need to pass the function name to create-ctimed-closure.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -132,6 +138,49 @@
              (values ,results (progn ,@body)))
          (dolist (,fn ,old-defs)
            (setf (fdefinition (car ,fn)) (cdr ,fn)))))))
+
+
+
+
+(defmacro create-ctimed-closure (c results)
+  (let ((start (gensym)))
+    `(let ((,start nil))
+       (lambda (&rest rest)
+         (if ,start
+             (apply ,c rest)
+           (unwind-protect
+               (progn
+                 (setf ,start (get-internal-real-time))
+                 (apply ,c rest))
+             (progn
+               (incf (first ,results))
+               (incf (second ,results) (- (get-internal-real-time) ,start))
+               (setf ,start nil))))))))
+
+(defmacro ctime-functions ((&rest fns) &body body)
+  (let ((results (gensym))
+        (old-defs (gensym))
+        (fn (gensym))
+        (f (gensym))
+        (c (gensym))
+        (d (gensym)))
+    
+    `(let ((,results nil)
+           (,old-defs (mapcan (lambda (x) (when (fboundp x) (list (cons x (fdefinition x))))) ',fns)))
+       (unwind-protect 
+           (progn
+             (dolist (,fn ,old-defs)
+               (let ((,f (car ,fn))
+                     (,c (cdr ,fn))
+                     (,d (list 0 0)))
+                 (push (cons ,f ,d) ,results)
+                 (setf (fdefinition ,f)
+                   (create-ctimed-closure ,c ,d))
+                 (compile ,f)))
+             (values ,results (progn ,@body)))
+         (dolist (,fn ,old-defs)
+           (setf (fdefinition (car ,fn)) (cdr ,fn)))))))
+
 
 (provide "TIME-FUNCTIONS")
 

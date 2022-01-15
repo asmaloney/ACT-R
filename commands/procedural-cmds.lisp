@@ -387,6 +387,15 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.07.08 Dan
+;;;             : * Fixed a typo in the warning for p-fct about no procedural
+;;;             :   module being available.
+;;; 2021.08.23 Dan 
+;;;             : * Fixed a problem with production-failure-reason because it
+;;;             :   didn't work when the buffer array mechanism was used since
+;;;             :   productions not in the matching buffer set didn't have their
+;;;             :   failure-condition cleared or set.  Now, it sets the ones
+;;;             :   that aren't in the buffer set to indicate that.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -635,8 +644,26 @@
 
   
 (defun production-failure-reason (p-name)
-  (let ((production (get-production p-name)))
+  ; only called with the procedural-cr-lock already held since it's
+  ; called during the conflict-set-hook by the procedural history recorder
+  
+  (let ((production (get-production p-name))
+        (procedural (get-module procedural)))
     (bt:with-recursive-lock-held ((production-lock production))
+  
+      (when (procedural-buffer-use-array procedural)
+        (let* ((buffer-state 
+                (let ((m (current-model-struct)))
+                  (bt:with-lock-held ((act-r-model-buffers-lock m))
+                    (act-r-model-buffer-state m))))
+               
+               (tested-productions (aref (procedural-buffer-use-array procedural) 
+                                         (aref (procedural-master-buffer-map procedural) buffer-state))))
+      
+          (unless (find production tested-productions)
+            (setf (production-failure-condition production) (cons :buffer-state buffer-state)))
+          ))
+  
       (if (and production (production-failure-condition production))
           (failure-reason-string (production-failure-condition production) production)
         ""))))
@@ -743,7 +770,7 @@
   (let ((prod (get-module procedural)))  
     (if (procedural-p prod)  
         (create-production prod definition) 
-      (print-warning "No procedural modulue found cannot create production."))))
+      (print-warning "No procedural module found cannot create production."))))
 
 
 (defun delete-production (prod-name)

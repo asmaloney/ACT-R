@@ -318,6 +318,8 @@
 ;;; 2020.08.25 Dan
 ;;;             : * Fixed a bug with chunk-spec-slots when it was given an id
 ;;;             :   instead of an actual chunk-spec.
+;;; 2021.07.15 Dan
+;;;             : * Fixed a typo in a warning in verify-single-explicit-value.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -864,7 +866,7 @@
                       (var (if (and (stringp var-char) (> (length var-char) 0)) (char var-char 0) var-char)))
                  
                  (if (and value (characterp var) (symbolp value) (char-equal var (char (symbol-name value) 0)))
-                     (values nil (print-warning "~a slot must be explict - not a variable in a ~a command to the ~s module." slot cmd module))
+                     (values nil (print-warning "~a slot must be explicit - not a variable in a ~a command to the ~s module." slot cmd module))
                    (values value t))))))
     (aif (id-to-chunk-spec chunk-spec)
          (verify-single-explicit-value it slot module cmd var-char)

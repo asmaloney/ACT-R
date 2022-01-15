@@ -104,7 +104,6 @@
   )
 
 #| Here's a trace of the run
-CG-USER(542): (run 1)
      0.000   PROCEDURAL             CONFLICT-RESOLUTION
      0.050   PROCEDURAL             PRODUCTION-FIRED P1
      0.050   PROCEDURAL             CLEAR-BUFFER BLENDING
@@ -186,7 +185,7 @@ Computing activation and latency for the blended chunk
 Activation for blended chunk is: 5.0881505
      0.050   PROCEDURAL             CONFLICT-RESOLUTION
      0.056   BLENDING               BLENDING-COMPLETE
-     0.056   BLENDING               SET-BUFFER-CHUNK BLENDING CHUNK0
+     0.056   BLENDING               SET-BUFFER-CHUNK-FROM-SPEC BLENDING 
      0.056   PROCEDURAL             CONFLICT-RESOLUTION
      0.106   PROCEDURAL             PRODUCTION-FIRED P2
 BLENDED VALUE IS 2.189969 AND SIZE IS MEDIUM 
@@ -273,6 +272,6 @@ Not above threshold so blending failed
      0.113   PROCEDURAL             CONFLICT-RESOLUTION
      0.113   ------                 Stopped because no events left to process
 0.113
-28
+27
 NIL
 |#

@@ -1,7 +1,31 @@
+# ACT-R tutorial unit 7 past-tense task.
+# This task presents the model with an English
+# verb (taken from a very small sample of verbs)
+# randomly chosen based on the frequency of that
+# verb's usage relative to the other verbs in the
+# set.  The model is then supposed to generate 
+# the past-tense for that verb.  For every verb
+# that the model must generate, it receives two
+# randomly chosen correctly formed past-tenses
+# which are merged into declarative memory.  The
+# code reports the percentages of correctly and
+# incorrectly formed past-tenses by the model and
+# will display a graph of the correctness for the
+# irregular verbs which tend to show a U-shape in
+# their learning.
+
+# Import the actr module for tutorial tasks and
+# math for the floor and ceil functions.
+
 import actr
 import math
 
+# Load the corresponding model for the task
+
 actr.load_act_r_model("ACT-R:tutorial;unit7;past-tense-model.lisp")
+
+# Global variables to hold the collected data and the verbs
+# along with their frequencies.
 
 report = []
 total_count = 0
@@ -30,6 +54,18 @@ verbs = [['have','i',12458,'had'],
          ['start','r',386,'start'],
          ['lose','i',274,'lost']]
 
+
+# make_word_freq_list takes one parameter which is a list
+# of verb description lists (as created above for the verbs
+# variable) that contains the verb, whether it has a regular
+# or irregular past-tense, it's relative frequency, and the
+# stem for its past-tense (either the verb itself for a regular
+# or the correct irregular inflection).  It returns a list
+# with a list for each verb that has a cumulative frequency
+# value and the three components for specifying the chunk
+# of the verb's past-tense (the verb, stem, and suffix slot
+# values).
+
 def make_word_freq_list (l):
 
     data = []
@@ -49,6 +85,10 @@ def make_word_freq_list (l):
     return(data)
 
 
+# random_word returns a list with the slot values for
+# a randomly choosen word from those in the word_list list
+# based on frequency.
+
 def random_word():
 
     num=actr.random(total_count)
@@ -58,32 +98,46 @@ def random_word():
             return(i[1:])
 
 
+# make_one_goal randomly chooses a verb to present to the
+# model in the imaginal buffer and sets the goal to be a
+# copy of the starting-goal chunk.  It returns the verb list
+# for the chosen verb.
+
 def make_one_goal():
 
     word = random_word()
   
-    actr.set_buffer_chunk('imaginal',actr.define_chunks(['verb',word[0]])[0])
+    actr.set_buffer_chunk('imaginal',['verb',word[0]])
     
     actr.goal_focus('starting-goal')
     
     return(word)
 
+# add_past_tense_to_memory randomly chooses a verb to
+# merge into the model's declartive memory.  It does
+# the merging by setting the imaginal buffer to a
+# chunk which has the appropriate slots set and then
+# clearing the buffer.
 
 def add_past_tense_to_memory ():
 
     word = random_word()
 
-    actr.set_buffer_chunk('imaginal',
-                          actr.define_chunks(['verb',word[0],
-                                              'stem',word[1],
-                                              'suffix',word[2]])[0])
+    actr.set_buffer_chunk('imaginal',['verb',word[0],'stem',word[1],'suffix',word[2]])
     actr.clear_buffer('imaginal')
 
+
+# print_header prints the column labels for the data displayed.
 
 def print_header():
     print ()
     print ( "trials      Irregular       Regular    No inflection  Inflected correctly")
 
+# results prints out the performance of the model
+# averaged over blocks of 1000 verbs, and optionally draws a
+# graph of the correctness of inflected irregular verbs (by 
+# default it draws the graph but providing a value of False or None 
+# will suppress the graph)
 
 def results(graph=True):
 
@@ -93,6 +147,10 @@ def results(graph=True):
         graph_it(data)
     return(data)
 
+# graph_it requires one parameter which is a list of
+# data which it draws in an experiment window scaling
+# increments on the x and y axis to fit the data to
+# the size of the graph
 
 def graph_it(data):
 
@@ -128,12 +186,18 @@ def graph_it(data):
         lasty = y
     
 
+# safe_div takes two parameters, n and d and returns
+# n/d unless d is 0 in which case it returns 0.
 
 def safe_div(n, d):
     if d == 0:
         return(0)
     else:
         return (n / d)
+
+# rep_f_i computes the average performance of the model
+# given a range of elements in the data in blocks of size
+# count and prints those values.
 
 def rep_f_i(start,end,count):
 
@@ -168,6 +232,12 @@ def rep_f_i(start,end,count):
 
     return data
 
+# add_to_report takes two parameters which are the verb
+# that was presented to the model and the resulting chunk
+# that it had in the imaginal buffer.  It records the
+# result based on the type of verb and correctness of
+# the response.  It also reports warnings for verbs
+# that are formed incorrectly by the model.
 
 def add_to_report(target, chunk):
     global report
@@ -194,21 +264,45 @@ def add_to_report(target, chunk):
             (target[0],word,stem,suffix))
         report.append([irreg,'error'])
 
+
+# create a global variable and a function that will be
+# used to monitor the trigger-reward command so that 
+# the code can verify whether or not the model receives
+# a reward on each trial.
+
 reward_check = False
 
 def verify_reward(*params):
     global reward_check
     reward_check = True
 
+# trials is used to run the model through
+# the task.  It takes one required parameter which
+# is the number of trials to present.  It has two
+# optional parameters.  The firt of those indicates
+# whether the model should continue doing the task
+# or be reset and start over.  The default is to
+# start over, but providing a true value will
+# cause it to continue.  The second optional parameter
+# controls whether the trace is shown or not.  The
+# default is to not show the trace, but providing 
+# a value of True will show the trace.
 
 def trials(n,cont=False,v=False):
 
     global report,word_list,reward_check
-    
+
+    # add a command to monitor trigger-reward 
+
     actr.add_command("reward-check",verify_reward,
                      "Past tense code check for a reward each trial.")
     actr.monitor_command("trigger-reward","reward-check")
 
+    # if there isn't a word list created yet or the
+    # model is supposed to start over then
+    # reset and create chunks for the verbs on the
+    # list.
+  
     if not(cont) or not(word_list):
         actr.reset()
         word_list = make_word_freq_list(verbs)
@@ -223,15 +317,27 @@ def trials(n,cont=False,v=False):
 
         print_header()
         report = []
- 
+
+    # set the :v value as provided
+
     actr.set_parameter_value(":v",v)
 
+    # present the n trials and report the data in
+    # blocks of 100 as it goes.
+    
     start = 100 * math.floor(len(report) / 100)
     count = len(report) % 100
 
     for i in range(n):
+        # Add the two random past-tenses to memory
         add_past_tense_to_memory()
         add_past_tense_to_memory()
+
+        # run the model up to 100 seconds to
+        # process a randomly chosen past-tense
+        # and record the data outputting it
+        # if there're 100 items to output
+      
         reward_check = False
         target = make_one_goal()
         duration = actr.run(100)[0]
@@ -243,16 +349,28 @@ def trials(n,cont=False,v=False):
             rep_f_i(start, start + 100, 100)
             count = 0
             start += 100
+
+        # If the model didn't get a reward or 
+        # spent all 100s running warn about that.
+
         if not(reward_check):
             actr.print_warning("Model did not receive a reward when given %s."% target[0])
-
-        actr.run_full_time(200 - duration)
 
         if duration == 100:
             actr.print_warning("Model spent 100 seconds generating a past tense for %s."%
                                target[0])
 
+        # run the model until 200 seconds have
+        # passed since the start of the trial
+
+        actr.run_full_time(200 - duration)
+
+    # if there are any remaining data items 
+    # report them (< 100 after the last block).
+
     rep_f_i(start,start+count,100)
+
+    # remove the monitor for trigger-reward 
 
     actr.remove_command_monitor("trigger-reward","reward-check")
     actr.remove_command("reward-check")

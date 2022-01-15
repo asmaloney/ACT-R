@@ -80,10 +80,10 @@
 #-(or (not :clean-actr) :packaged-actr :ALLEGRO-IDE) (in-package :cl-user)
 
 (defvar *actr-architecture-version* "7")
-(defvar *actr-major-version-string* "21")
-(defvar *actr-minor-version-string* "6")
-(defvar *actr-repository-number* "3099")
-(defvar *actr-release-tag* "2020-12-21")
+(defvar *actr-major-version-string* "27")
+(defvar *actr-minor-version-string* nil)
+(defvar *actr-repository-number* "3193")
+(defvar *actr-release-tag* "2021-09-15")
 
 (defvar *actr-version-string* (format nil "~a.~a~@[.~a~]-<~@[~a:~]~a>"
                                 *actr-architecture-version*

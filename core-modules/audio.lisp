@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : audio.lisp
-;;; Version     : 6.0
+;;; Version     : 6.1
 ;;; 
 ;;; Description : Source for RPM's Audition Module
 ;;; 
@@ -476,6 +476,9 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.06.09 Dan [6.1]
+;;;             : * Make sure the aural-location buffer always gets a new 
+;;;             :   chunk when it's set with buffer-requires-copies.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -504,7 +507,7 @@
 
    (last-stuffed-event :accessor last-stuffed-event :initform nil))
    (:default-initargs
-     :version-string "6.0"
+     :version-string "6.1"
      :name :AUDIO))
 
 
@@ -1160,7 +1163,7 @@
     (setf (default-spec instance)
       (define-chunk-spec :attended nil)))
   
-  
+  (buffer-requires-copies 'aural-location)
   
   )
 

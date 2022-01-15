@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : tracker.lisp
-;;; Version     : 5.3
+;;; Version     : 6.0
 ;;; 
 ;;; Description : Module to create "trackers" which can learn a mapping of values
 ;;;             : in monitored slots for "good" and/or "bad" events to an output
@@ -182,6 +182,9 @@
 ;;;             : * Fixed yet another bug with the modification request -- it
 ;;;             :   was modifying the chunk currently in the buffer instead of
 ;;;             :   the underlying chunk since it's a copied multi-buffer.
+;;; 2021.06.07 Dan [6.0]
+;;;             : * Also monitor for overwrite-buffer-chunk in addition to
+;;;             :   set-buffer-chunk and mod-buffer-chunk actions.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -1128,7 +1131,7 @@
   :request 'request-tracker
   :delete 'delete-tracker
   :query 'tracker-query
-  :version "5.3"
+  :version "6.0"
   :documentation "Module which can learn an outcome value based on one or two events monitored in buffer slots.")
 
 (defun updated-tracker-value (module tracker buffer slot value scale which)
@@ -1149,24 +1152,23 @@
            
            
 (defun tracker-check-for-buffer-changes (event)
-  (cond ((eq (evt-action event) 'set-buffer-chunk)
+  (cond ((or (eq (evt-action event) 'set-buffer-chunk) (eq (evt-action event) 'overwrite-buffer-chunk))
          (let ((module (get-module :tracker))
                (changed-buffer (first (evt-params event))))
              (bt:with-recursive-lock-held ((tracker-lock module))
                (dolist (x (trackers module))
                  (when (tracker-active x)
-                   (when (eq changed-buffer (tracker-good-buffer x))
+                   (when (or (eq changed-buffer (tracker-good-buffer x)) (eq changed-buffer (tracker-bad-buffer x)))
                      (let* ((chunk (buffer-read changed-buffer))
-                            (slot (tracker-good-slot x))
                             (slots (and chunk (chunk-filled-slots-list-fct chunk))))
-                       (when (find slot slots)
-                         (incf (tracker-good-value x) (updated-tracker-value module x changed-buffer slot (fast-chunk-slot-value-fct chunk slot) (tracker-good-scale x) 'good)))))
-                   (when (eq changed-buffer (tracker-bad-buffer x))
-                     (let* ((chunk (buffer-read changed-buffer))
-                            (slot (tracker-bad-slot x))
-                            (slots (and chunk (chunk-filled-slots-list-fct chunk))))
-                       (when (find slot slots)
-                         (incf (tracker-bad-value x) (updated-tracker-value module x changed-buffer slot (fast-chunk-slot-value-fct chunk slot) (tracker-bad-scale x) 'bad))))))))))
+                       (when (eq changed-buffer (tracker-good-buffer x))
+                         (let ((slot (tracker-good-slot x)))
+                           (when (find slot slots)
+                             (incf (tracker-good-value x) (updated-tracker-value module x changed-buffer slot (fast-chunk-slot-value-fct chunk slot) (tracker-good-scale x) 'good)))))
+                       (when (eq changed-buffer (tracker-bad-buffer x))
+                         (let ((slot (tracker-bad-slot x)))
+                           (when (find slot slots)
+                             (incf (tracker-bad-value x) (updated-tracker-value module x changed-buffer slot (fast-chunk-slot-value-fct chunk slot) (tracker-bad-scale x) 'bad))))))))))))
         ((eq (evt-action event) 'mod-buffer-chunk)
          (let* ((module (get-module :tracker))
                 (changed-buffer (first (evt-params event)))

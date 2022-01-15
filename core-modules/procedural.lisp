@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : procedural.lisp
-;;; Version     : 8.1
+;;; Version     : 8.3
 ;;; 
 ;;; Description : Implements the procedural module (productions).
 ;;; 
@@ -879,6 +879,30 @@
 ;;;             :   event in the queue.  Not making it documented functionality
 ;;;             :   at this point, but if somebody else runs into similar issues
 ;;;             :   I'll need to reconsider that.
+;;; 2021.03.10 Dan [8.2]
+;;;             : * Added a :do-not-query parameter which works like do-not-
+;;;             :   harvest to exclude buffers from the new "safe qeuring" 
+;;;             :   mechanism that adds an explict "?buffer> state free" query
+;;;             :   to the LHS of productions that make a request without a
+;;;             :   corresponding query to the buffer.
+;;; 2021.04.02 Dan
+;;;             : * When use-tree is true need to do some the array setup before
+;;;             :   walking the tree in conflict-resolution.
+;;;             : * Removed the isa-node structure and added a slot to the root-
+;;;             :   node to hold the condition numbering.
+;;; 2021.04.21 Dan
+;;;             : * Added a declare ignorable to procedural-run-check to avoid
+;;;             :   a warning when loading the single threaded version.
+;;; 2021.05.10 Dan
+;;;             : * Allow use-tree to work with ppm (it won't use the slot test
+;;;             :   conditions so may not be very useful).
+;;; 2021.06.04 Dan
+;;;             : * Adjusted the style warning check for set-buffer-chunk to
+;;;             :   deal with the case where set-buffer-chunk is passed a 
+;;;             :   chunk-spec instead of a chunk name.
+;;; 2021.08.18 Dan [8.3]
+;;;             : * Don't reschedule conflict-resolution just because :v was
+;;;             :   changed...
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -988,6 +1012,8 @@
   
   req-spec
   
+  do-not-query
+  
   current-p
   ppm
   md
@@ -1039,7 +1065,7 @@
 (defstruct conflict-node
   parent branch (valid nil) entropy)
 
-(defstruct (root-node (:include conflict-node)) child)
+(defstruct (root-node (:include conflict-node)) child conditions)
 (defstruct (leaf-node (:include conflict-node)))
 
 (defstruct (test-node (:include conflict-node))
@@ -1047,9 +1073,6 @@
 
 (defstruct (binary-test-node (:include test-node))
    true false)
-
-(defstruct (isa-node (:include binary-test-node))
-  buffer-index)
 
 (defstruct (query-node (:include binary-test-node))
   query)
@@ -1155,9 +1178,9 @@
     (cond ((consp param)
          
          ;; Changing procedural parameters reschedules conflict resolution
-         ;; if it's waiting to happen
+         ;; if it's waiting to happen unless it's :v
          
-         (un-delay-conflict-resolution)
+         (unless (eq (car param) :v) (un-delay-conflict-resolution))
          
          (case (car param)
            (:use-tree (setf (procedural-use-tree procedural) (cdr param)))
@@ -1190,8 +1213,12 @@
            
            
            (:do-not-harvest
-            (setf (procedural-unharvested-buffers procedural) 
-              (set-or-remove-hook-parameter :do-not-harvest (procedural-unharvested-buffers procedural) (cdr param))))
+               (setf (procedural-unharvested-buffers procedural) 
+                 (set-or-remove-hook-parameter :do-not-harvest (procedural-unharvested-buffers procedural) (cdr param))))
+           
+           (:do-not-query
+               (setf (procedural-do-not-query procedural) 
+                 (set-or-remove-hook-parameter :do-not-query (procedural-do-not-query procedural) (cdr param))))
            
            (:cycle-hook
             (setf (procedural-cycle-hook procedural) 
@@ -1225,6 +1252,9 @@
            
            (:do-not-harvest
             (procedural-unharvested-buffers procedural))
+           
+           (:do-not-query
+               (procedural-do-not-query procedural))
            
            (:cycle-hook (procedural-cycle-hook procedural))
            (:conflict-set-hook (procedural-conflict-set-hook procedural))
@@ -1512,9 +1542,17 @@
           (when (and (eq (evt-model event) (current-model))
                      (or (eq (evt-action event) 'set-buffer-chunk)
                          (eq (evt-action event) #'set-buffer-chunk)))
-            (let ((params (evt-params event)))
-              (setf (gethash (first params) (procedural-init-chunk-slots procedural)) 
-                (remove-duplicates (append (gethash (first params) (procedural-init-chunk-slots procedural)) (chunk-filled-slots-list-fct (second params))))))))
+            (let* ((params (evt-params event))
+                   (value (second params)))
+              (if (symbolp value)
+                  (setf (gethash (first params) (procedural-init-chunk-slots procedural)) 
+                    (remove-duplicates (append (gethash (first params) (procedural-init-chunk-slots procedural)) (chunk-filled-slots-list-fct value))))
+                (let ((spec (or (and (act-r-chunk-spec-p value) value)
+                                (id-to-chunk-spec value))))
+                  (when spec
+                    (setf (gethash (first params) (procedural-init-chunk-slots procedural)) 
+                      (remove-duplicates (append (gethash (first params) (procedural-init-chunk-slots procedural)) 
+                                                 (slot-mask->names (chunk-spec-filled-slots spec)))))))))))
         
         ;; also look at the buffers themselves to see if there are any chunks there
         (dolist (buffer (buffers))
@@ -1532,8 +1570,9 @@
           
           (progn
             (when (or (procedural-crt procedural)
-                      (procedural-ppm procedural))
-              (model-warning "Conflict resolution cannot use the decision tree when :crt or :ppm is enabled."))
+                      ; allow for now (procedural-ppm procedural)
+                      )
+              (model-warning "Conflict resolution cannot use the decision tree when :crt is enabled."))
             
             (cond ((null (procedural-last-conflict-tree procedural))
                    (build-conflict-tree procedural)
@@ -2043,7 +2082,7 @@
       nil)))
 
 (defun conflict-resolution (procedural)
-  (let (crt ppm er conflict-set-hook cst v dat use-tree)
+  (let (crt  er conflict-set-hook cst v dat use-tree)
   (bt:with-lock-held ((procedural-cr-lock procedural))
     (setf (procedural-delayed-resolution procedural) nil)
   
@@ -2051,7 +2090,7 @@
     
     (bt:with-lock-held ((procedural-param-lock procedural))
       (setf crt (procedural-crt procedural)
-        ppm (procedural-ppm procedural)
+       ; ppm (procedural-ppm procedural)
         er (procedural-er procedural)
         conflict-set-hook (procedural-conflict-set-hook procedural)
         cst (procedural-cst procedural)
@@ -2080,9 +2119,21 @@
                                  (setf (aref (procedural-master-buffer-map procedural) buffer-state) mapped-state)
                                  (aref (procedural-buffer-use-array procedural) mapped-state)))
                           )
-                         (ppm
-                          (productions-list procedural))
+                         ;(ppm
+                         ; (productions-list procedural))
                          (use-tree
+                          (if (null (procedural-buffer-lookup procedural))
+                              (setf (procedural-buffer-lookup procedural) (make-array (list (procedural-buffer-lookup-size procedural)) :initial-element :untested))
+                            (fill (procedural-buffer-lookup procedural) :untested :start 0 :end (procedural-buffer-lookup-size procedural)))
+                          
+                          (if (or (null (procedural-slot-lookup procedural))
+                                  (not (= (largest-chunk-type-size) (procedural-largest-chunk-type procedural))))
+                              (progn
+                                (setf (procedural-largest-chunk-type procedural) (largest-chunk-type-size))
+                                (setf (procedural-slot-lookup procedural) (make-array (list (procedural-buffer-lookup-size procedural) (largest-chunk-type-size)) :initial-element :untested)))
+                            (dolist (x (procedural-slot-used procedural) (setf (procedural-slot-used procedural) nil))
+                              (setf (aref (procedural-slot-lookup procedural) (car x) (cdr x)) :untested)))
+                          
                           (mapcar (lambda (x) (get-production-internal x procedural)) (get-valid-productions procedural)))
                          (t
                           (productions-list procedural)))))
@@ -2091,17 +2142,20 @@
     (setf (procedural-last-cr-time procedural) (mp-time-ms))
     
     (when test-set
-          (if (null (procedural-buffer-lookup procedural))
-        (setf (procedural-buffer-lookup procedural) (make-array (list (procedural-buffer-lookup-size procedural)) :initial-element :untested))
-      (fill (procedural-buffer-lookup procedural) :untested :start 0 :end (procedural-buffer-lookup-size procedural)))
+          
                      
-    (if (or (null (procedural-slot-lookup procedural))
-            (not (= (largest-chunk-type-size) (procedural-largest-chunk-type procedural))))
-        (progn
-          (setf (procedural-largest-chunk-type procedural) (largest-chunk-type-size))
-          (setf (procedural-slot-lookup procedural) (make-array (list (procedural-buffer-lookup-size procedural) (largest-chunk-type-size)) :initial-element :untested)))
-      (dolist (x (procedural-slot-used procedural) (setf (procedural-slot-used procedural) nil))
-        (setf (aref (procedural-slot-lookup procedural) (car x) (cdr x)) :untested)))
+      (unless use-tree
+        (if (null (procedural-buffer-lookup procedural))
+        (setf (procedural-buffer-lookup procedural) (make-array (list (procedural-buffer-lookup-size procedural)) :initial-element :untested))
+          (fill (procedural-buffer-lookup procedural) :untested :start 0 :end (procedural-buffer-lookup-size procedural)))
+        
+        (if (or (null (procedural-slot-lookup procedural))
+                (not (= (largest-chunk-type-size) (procedural-largest-chunk-type procedural))))
+            (progn
+              (setf (procedural-largest-chunk-type procedural) (largest-chunk-type-size))
+              (setf (procedural-slot-lookup procedural) (make-array (list (procedural-buffer-lookup-size procedural) (largest-chunk-type-size)) :initial-element :untested)))
+          (dolist (x (procedural-slot-used procedural) (setf (procedural-slot-used procedural) nil))
+            (setf (aref (procedural-slot-lookup procedural) (car x) (cdr x)) :untested))))
       
     
     (dolist (b (procedural-used-search-buffers procedural))
@@ -2556,7 +2610,7 @@
   (declare (ignore instance buffer-name chunk-spec)))
 
 (defun procedural-run-check (instance)
-    
+  (declare (ignorable instance))
   ;; if there aren't any procedural events put a new
   ;; conflict-resolution out there...
     (unless (mp-modules-events 'procedural)
@@ -2617,12 +2671,16 @@
         (define-parameter :do-not-harvest :valid-test 'do-not-harvest-value-test :default-value nil 
           :warning "a string or symbol or a list starting with :remove" :documentation "Buffers that are not strict harvested")
         
+        (define-parameter :do-not-query :valid-test 'do-not-harvest-value-test :default-value nil 
+          :warning "a string or symbol or a list starting with :remove" 
+          :documentation "Buffers that are not automatically queried for state free")
+        
         (define-parameter :use-tree :valid-test 'tornil :default-value nil
           :warning "T or nil" :documentation "Use a decision tree in production matching")
         (define-parameter :style-warnings :valid-test 'tornil :default-value t
           :warning "T or nil" :documentation "Show model warnings for production issues that don't prevent production definition"))
   
-  :version "8.1" 
+  :version "8.3" 
   :documentation 
   "The procedural module handles production definition and execution"
   

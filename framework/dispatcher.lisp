@@ -553,6 +553,19 @@
 ;;;             :   to a string with an IPv4 address to bypass getting one from
 ;;;             :   usocket (could be set before loading since it's defined with
 ;;;             :   defvar here).
+;;; 2021.02.18 Dan
+;;;             : * When it falls back to local-host after failing to start with
+;;;             :   the real address it needs to also restart with the initial
+;;;             :   port number.
+;;; 2021.05.07 Dan
+;;;             : * Use concatenate instead of format in the redefinition of the
+;;;             :   encode-json method for handling keywords since it's usually
+;;;             :   a lot faster.
+;;;             : * Also hide the redefinition warning about it by just sending
+;;;             :   *standard-output* and *error-output* to a string-stream.
+;;; 2021.05.11 Dan
+;;;             : * Changed reference to GUI directory to gui to avoid issues
+;;;             :   with logical pathnames (particularlly in SBCL).
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -807,7 +820,13 @@
       (format nil "'~a'" s)
     s))
 
+(defvar *hide-warnings-stream* (make-string-output-stream))
+(defvar *original-output* *standard-output*)
+(defvar *original-error* *error-output*)
 
+(setf *standard-output* *hide-warnings-stream*
+  *error-output* *hide-warnings-stream*)
+  
 ;; Need to make sure keyword symbols keep the colon on the front
 ;; so can't just use the symbol-name of a symbol.
 
@@ -819,11 +838,14 @@
   (let ((mapped (car (rassoc s json::+json-lisp-symbol-tokens+))))
     (if mapped
         (progn (write-string mapped stream) nil)
-        (let ((s (funcall json::*lisp-identifier-name-to-json* (if (keywordp s) (format nil "~s" s) (symbol-name s)))))
+        (let ((s (funcall json::*lisp-identifier-name-to-json* (if (keywordp s) (concatenate 'string ":" (symbol-name s)) (symbol-name s)))))
           (json::write-json-string s stream)))))
 
 
 (setf json:*lisp-identifier-name-to-json* 'identity)
+
+(setf *standard-output* *original-output*
+  *error-output* *original-error*)
 
 ;;; These handle the underlying processing.
 ;;; They're called either from Lisp functions or the
@@ -1164,7 +1186,8 @@
 #-:single-threaded-act-r
 (defun start-des (&optional (create t) (given-host *default-host*) (remote-port 2650))
   (bt:start-multiprocessing)
-  (let* ((host (if given-host
+  (let* ((starting-port remote-port)
+         (host (if given-host
                    (progn
                      (setf *server-host* (ignore-errors (map 'vector 'parse-integer (usocket::split-sequence #\. given-host))))
                      given-host)
@@ -1207,7 +1230,7 @@
                                            (setf host
                                              (progn
                                                (setf first-try nil)
-                                               
+                                               (setf remote-port starting-port)
                                                (let ((local-host-ip (ignore-errors (find-if (lambda (x) (and (= (length x) 4) (not (every 'zerop x))))
                                                                                           (usocket::get-hosts-by-name "localhost")))))
                                                  (setf *allow-external-connections* t)
@@ -1255,14 +1278,14 @@
             (error (x)
               (send-error-output "Error ~/print-error-message/ occurred while trying to write the port number to ~s~%" x (translate-logical-pathname "~/act-r-port-num.txt"))))
           
-          (handler-case (with-open-file (f (translate-logical-pathname "ACT-R:environment;GUI;init;05-current-net.tcl") :direction :output :if-exists :supersede :if-does-not-exist :create)
+          (handler-case (with-open-file (f (translate-logical-pathname "ACT-R:environment;gui;init;05-current-net.tcl") :direction :output :if-exists :supersede :if-does-not-exist :create)
                           (multiple-value-bind
                                 (second minute hour date month year)
                               (get-decoded-time)
                             (format f "# Port settings for ACT-R server started at ~2,'0d:~2,'0d:~2,'0d ~d/~2,'0d/~d~%set actr_port ~d~%set actr_address \"~a\"~%"
                               hour minute second month date year remote-port host)))
             (error (x)
-              (send-error-output "Error ~/print-error-message/ occurred while trying to write the Environment network config file ~s~%" x (translate-logical-pathname "ACT-R:environment;GUI;init;05-current-net.tcl"))))
+              (send-error-output "Error ~/print-error-message/ occurred while trying to write the Environment network config file ~s~%" x (translate-logical-pathname "ACT-R:environment;gui;init;05-current-net.tcl"))))
           
           
           t)

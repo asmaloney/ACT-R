@@ -205,6 +205,8 @@
 ;;;             :   so it displays in the low detail trace.  Prior to the fix
 ;;;             :   for preparation free they were all just calling it and had
 ;;;             :   the event shown automatically in the low detail trace.
+;;; 2021.01.08 Dan 
+;;;             : * Didn't update the module version with the last change.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -1493,7 +1495,7 @@
   :query 'generic-state-query 
   :creation 'create-motor-extension-module
   :reset (list nil nil 'reset-hand-tracker)
-  :version "6.0"
+  :version "6.1"
   :documentation "Extends motor module with dual processor and/or execution states and finger holding actions.")
 
 

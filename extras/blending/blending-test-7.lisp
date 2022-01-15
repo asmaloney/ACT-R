@@ -99,7 +99,6 @@
   )
 
 #| Here's a trace of the run
-CG-USER(547): (run 1)
      0.000   PROCEDURAL             CONFLICT-RESOLUTION
      0.050   PROCEDURAL             PRODUCTION-FIRED P1
      0.050   PROCEDURAL             CLEAR-BUFFER BLENDING
@@ -119,41 +118,7 @@ Chunk E matches blending request
   Probability of recall 3.7122225e-6
 
 
-Slots to be blended: (SIZE VALUE KEY)
-Finding blended value for slot: SIZE
-Matched chunks' slots contain: (X-LARGE TINY SMALL)
-Magnitude values for those items: (X-LARGE TINY SMALL)
-When all magnitudes are chunks blending based on similarities to all related chunks
-Intersection of slots for values is: (SIZE-TYPE)
- Comparing value X-LARGE
-  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: 0.0 cumulative result: 0.0
-  Chunk C with probability 0.9981818 slot value TINY similarity: -0.9 cumulative result: 0.80852723
-  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: -0.6 cumulative result: 0.80852854
- Comparing value LARGE
-  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: -0.1 cumulative result: 1.8145374e-5
-  Chunk C with probability 0.9981818 slot value TINY similarity: -0.6 cumulative result: 0.35936362
-  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: -0.3 cumulative result: 0.35936394
- Comparing value MEDIUM
-  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: -0.3 cumulative result: 1.6330836e-4
-  Chunk C with probability 0.9981818 slot value TINY similarity: -0.3 cumulative result: 0.089999676
-  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: -0.1 cumulative result: 0.08999971
- Comparing value SMALL
-  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: -0.6 cumulative result: 6.5323344e-4
-  Chunk C with probability 0.9981818 slot value TINY similarity: -0.1 cumulative result: 0.010635052
-  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: 0.0 cumulative result: 0.010635052
- Comparing value TINY
-  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: -0.9 cumulative result: 0.0014697751
-  Chunk C with probability 0.9981818 slot value TINY similarity: 0.0 cumulative result: 0.0014697751
-  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: -0.1 cumulative result: 0.0014698122
- Final result: TINY
-Finding blended value for slot: VALUE
-Matched chunks' slots contain: (2 3 3)
-Magnitude values for those items: (2 3 3)
-With numeric magnitudes blending by weighted average
- Chunk B with probability 0.0018145373 times magnitude 2.0 = 0.0036290747 cumulative result: 0.0036290747
- Chunk C with probability 0.9981818 times magnitude 3.0 = 2.9945455 cumulative result: 2.9981744
- Chunk E with probability 3.7122225e-6 times magnitude 3.0 = 1.1136667e-5 cumulative result: 2.9981856
- Final result: 2.9981856
+Slots to be blended: (KEY VALUE SIZE)
 Finding blended value for slot: KEY
 Matched chunks' slots contain: (KEY-1 KEY-1 KEY-2)
 Magnitude values for those items: (KEY-1 KEY-1 KEY-2)
@@ -200,8 +165,42 @@ No intersecting slots found all chunks will be tested
   Chunk C with probability 0.9981818 slot value KEY-1 similarity: -1.0 cumulative result: 0.99999636
   Chunk E with probability 3.7122225e-6 slot value KEY-2 similarity: -1.0 cumulative result: 1.0000001
  Final result: D
+Finding blended value for slot: VALUE
+Matched chunks' slots contain: (2 3 3)
+Magnitude values for those items: (2 3 3)
+With numeric magnitudes blending by weighted average
+ Chunk B with probability 0.0018145373 times magnitude 2.0 = 0.0036290747 cumulative result: 0.0036290747
+ Chunk C with probability 0.9981818 times magnitude 3.0 = 2.9945455 cumulative result: 2.9981744
+ Chunk E with probability 3.7122225e-6 times magnitude 3.0 = 1.1136667e-5 cumulative result: 2.9981856
+ Final result: 2.9981856
+Finding blended value for slot: SIZE
+Matched chunks' slots contain: (X-LARGE TINY SMALL)
+Magnitude values for those items: (X-LARGE TINY SMALL)
+When all magnitudes are chunks blending based on similarities to all related chunks
+Intersection of slots for values is: (SIZE-TYPE)
+ Comparing value X-LARGE
+  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: 0.0 cumulative result: 0.0
+  Chunk C with probability 0.9981818 slot value TINY similarity: -0.9 cumulative result: 0.80852723
+  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: -0.6 cumulative result: 0.80852854
+ Comparing value LARGE
+  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: -0.1 cumulative result: 1.8145374e-5
+  Chunk C with probability 0.9981818 slot value TINY similarity: -0.6 cumulative result: 0.35936362
+  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: -0.3 cumulative result: 0.35936394
+ Comparing value MEDIUM
+  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: -0.3 cumulative result: 1.6330836e-4
+  Chunk C with probability 0.9981818 slot value TINY similarity: -0.3 cumulative result: 0.089999676
+  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: -0.1 cumulative result: 0.08999971
+ Comparing value SMALL
+  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: -0.6 cumulative result: 6.5323344e-4
+  Chunk C with probability 0.9981818 slot value TINY similarity: -0.1 cumulative result: 0.010635052
+  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: 0.0 cumulative result: 0.010635052
+ Comparing value TINY
+  Chunk B with probability 0.0018145373 slot value X-LARGE similarity: -0.9 cumulative result: 0.0014697751
+  Chunk C with probability 0.9981818 slot value TINY similarity: 0.0 cumulative result: 0.0014697751
+  Chunk E with probability 3.7122225e-6 slot value SMALL similarity: -0.1 cumulative result: 0.0014698122
+ Final result: TINY
 This is the definition of the blended chunk:
-(SIZE TINY VALUE 2.9981856 KEY D)
+(KEY D VALUE 2.9981856 SIZE TINY)
 
 Computing activation and latency for the blended chunk
  Activation of chunk B is 2.5325232
@@ -210,13 +209,13 @@ Computing activation and latency for the blended chunk
 Activation for blended chunk is: 4.8763266
      0.050   PROCEDURAL             CONFLICT-RESOLUTION
      0.058   BLENDING               BLENDING-COMPLETE
-     0.058   BLENDING               SET-BUFFER-CHUNK BLENDING CHUNK0
+     0.058   BLENDING               SET-BUFFER-CHUNK-FROM-SPEC BLENDING 
      0.058   PROCEDURAL             CONFLICT-RESOLUTION
      0.108   PROCEDURAL             PRODUCTION-FIRED P2
 BLENDED VALUE IS 2.9981856 SIZE IS TINY AND KEY IS D 
      0.108   PROCEDURAL             CONFLICT-RESOLUTION
      0.108   ------                 Stopped because no events left to process
 0.108
-23
+22
 NIL
 |#

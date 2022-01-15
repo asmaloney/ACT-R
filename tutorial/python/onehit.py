@@ -1,6 +1,26 @@
+# ACT-R tutorial unit 5 one-hit blackjack task
+#
+# This file implements the one-hit blackjack game
+# that is described in the unit text and allows
+# one to run a model against a human opponent or
+# an opponent controlled by functions created
+# to play the game.  It also allows one to control
+# the decks of cards that are used to provide 
+# different situations for the model to learn.
+
+# Import the actr module for tutorial tasks, math
+# for the floor function, and numbers for the Number class.
+
 import actr
 import math
 import numbers
+
+
+# Before loading the model define the function
+# that will be used to compute the similarities
+# between numbers and add a command for it because
+# that command name is used in the model's parameter
+# settings.
 
 def onehit_bj_number_sims(a,b):
 
@@ -14,6 +34,12 @@ actr.add_command("1hit-bj-number-sims",onehit_bj_number_sims,
 
 actr.load_act_r_model("ACT-R:tutorial;unit5;1hit-blackjack-model.lisp")
 
+
+# Define a lot of global variables to control the
+# details of the game, a code-based opponent, 
+# record responses, and keep track of whether the
+# output-key action is being monitored.
+
 deck1 = None
 deck2 = None
 opponent_rule = None
@@ -23,6 +49,13 @@ human_action = None
 opponent_threshold = None
 key_monitor_installed = False
 
+
+# respond_to_keypress will be monitoring the
+# output-key command and will be called when a 
+# key is pressed by the model or a human playing
+# the game.  It records the key in the corresponding
+# variable based on who made it.
+
 def respond_to_keypress(model,key):
     global model_action,human_action
 
@@ -31,7 +64,11 @@ def respond_to_keypress(model,key):
     else:
         human_action = key
 
-
+# These functions are used to create the command and monitor
+# output-key and correspondingly remove the monitor and command
+# when needed because it is more efficient to do so once instead
+# of on each trial (as has been done for most prior tasks) since
+# this will require running many trials to collect the data.
 
 def add_key_monitor():
     global key_monitor_installed
@@ -53,6 +90,12 @@ def remove_key_monitor():
     global key_monitor_installed
     key_monitor_installed = False
 
+# hands takes one required parameter which is a number of
+# hands to play and an optional parameter which if specified as
+# True will print out the details of the hands.
+# It plays the game based on the settings of the global varaibles
+# for the decks of cards and opponent functions and returns the
+# list of results.
 
 def hands(hands,print_game=False):
 
@@ -102,6 +145,11 @@ def hands(hands,print_game=False):
 
     return scores
 
+# blocks takes two required parameters which are how many 
+# blocks of hands to play and how many hands are in a block.
+# It plays the specified number of blocks and returns the list
+# of results by block.
+
 def blocks(blocks,block_size):
     
     res = []
@@ -115,6 +163,12 @@ def blocks(blocks,block_size):
 
     return res
 
+# game0 function sets the global variables to configure
+# the default game -- the regular distribution of cards
+# in a deck and an opponent which has a fixed threshold
+# of 15 for deciding whether to hit or stay and which does
+# not process the feedback.
+
 def game0():
     global deck1,deck2,opponent_threshold,opponent_rule,opponent_feedback
 
@@ -124,9 +178,21 @@ def game0():
     opponent_threshold = 15
     opponent_feedback = None
 
+# sum_lists is used to add results lists
+# together for the data collection below
 
 def sum_lists(x,y):
     return list(map(lambda v,w: v + w,x,y))
+
+
+# learning requires one paramter which is how many 100 hand
+# games to play.  There are two optional paramters which
+# indicate whether a graph of the results should be drawn
+# in an experiment window (default is t which draws it)
+# and to specify a function to use to set the variables that
+# configure the game play (the default is game0).
+# It returns a list with the average win percentages from
+# the n games in both blocks of 20 and blocks of 5 hands.
 
 def learning(n,graph=True,game=game0):
 
@@ -152,6 +218,8 @@ def learning(n,graph=True,game=game0):
              sum(percentages[15:20])/5],
              percentages]
     
+# draw_graph takes a list of percentages and displays them in
+# a graph using an experiment window for output.
 
 def draw_graph(points):
 
@@ -172,8 +240,18 @@ def draw_graph(points):
                                     'blue')
         x += 25
 
+
+# deal takes a deck function and returns a list of
+# the next three cards that it returns when called.
+
 def deal(deck):
     return [deck(),deck(),deck()]
+
+
+# score_cards takes a list of cards and an optional value
+# indicating the number over which a hand busts (defaults to 21).
+# It returns the total value of those cards treating 1s as 11 
+# if possible without busting.
 
 def score_cards(cards,bust=21):
 
@@ -184,6 +262,11 @@ def score_cards(cards,bust=21):
             total += 10
 
     return total
+
+# compute_outcome takes a list of cards for each player and an
+# optional value indicating the number over which a hand busts.
+# It computes the total for each hand of cards and returns the
+# result (win, lose, or bust) for the first list of cards.
 
 def compute_outcome(p1cards,p2cards,bust=21):
     p1tot = score_cards(p1cards,bust)
@@ -196,6 +279,14 @@ def compute_outcome(p1cards,p2cards,bust=21):
         return 'win'
     else:
         return 'lose'
+
+# show_model_cards takes two parameters. The first is a list of
+# the model's starting cards and the second is the opponent's face
+# up card.  If there is a chunk in the model's goal buffer it is
+# modified to the initial state of the game.  If there is not a
+# chunk in the goal buffer then a new chunk is created and placed
+# into the buffer.  Then the model is run for exactly 10 seconds
+# and any response it made is returned.
 
 def show_model_cards(mcards,ocard):
 
@@ -214,6 +305,16 @@ def show_model_cards(mcards,ocard):
     model_action = 's'
     actr.run_full_time(10)
     return model_action
+
+# show_model_results takes four parameters. The first is a list of
+# the model's final cards and the second is the list of the opponent's
+# final cards.  The third is the model's end result and the fourth is
+# the opponents end result. 
+# If there is a chunk in the model's goal buffer it is modified to
+# the results state of the game with all the information.  If there
+# is not a chunk in the goal buffer then a new chunk is created with
+# the results information and placed into the buffer.  Then the model
+# is run for exactly 10 seconds.
 
 def show_model_results(mcards,ocards,mres,ores):
 
@@ -243,6 +344,14 @@ def show_model_results(mcards,ocards,mres,ores):
 
     actr.run_full_time(10)
 
+
+# play_human takes two parameters. The first is the list of
+# the player's cards and the other is the model's face up card.
+# It opens an experiment window to display that information to
+# a person and waits exactly 10 seconds before continuing the
+# game. It returns the key press the player made, or 's' (stay)
+# if no key was pressed.
+
 def play_human(cards,oc1):
 
     win = actr.open_exp_window('Human')
@@ -270,6 +379,13 @@ def play_human(cards,oc1):
     else:
         return 's'
 
+# show_human_results takes four parameters. The first is a list of
+# the player's final cards and the second is the list of the model's
+# final cards.  The third is the player's end result and the fourth is
+# the model's end result. 
+# All of the cards and outcomes are displayed in an experiment
+# window and it waits 10 seconds before continuing.
+
 def show_human_results(own_cards,others_cards,own_result,others_result):
 
     win = actr.open_exp_window('Human')
@@ -296,6 +412,14 @@ def show_human_results(own_cards,others_cards,own_result,others_result):
     while (actr.get_time(False) - start_time) < 10000:
         actr.process_events()
 
+# play_against_model requries one parameter which is how many
+# hands to play and an optional parameter indicating whether 
+# the hand information should be printed.  It sets the global
+# variables to those needed to have a person play against the
+# model and then runs for the indicated number of hands.  After
+# that, it sets the variables back to the values they had
+# before.
+
 def play_against_model(count,print_games=False):
     global opponent_rule,opponent_feedback
 
@@ -317,6 +441,10 @@ def play_against_model(count,print_games=False):
     else:
         actr.print_warning("Cannot play against the model without a visible window available.")
 
+# show_opponent_cards and show_opponent_results are used
+# by the game code to call the appropriate function for
+# the non-model player to receive the game information.
+
 def show_opponent_cards(ocards,mc1):
     return opponent_rule(ocards,mc1)
 
@@ -325,8 +453,22 @@ def show_opponent_results(ocards,mcards,ores,mres):
         opponent_feedback(ocards,mcards,ores,mres)
 
 
+# The functions below are used to create the game0 and game1
+# situations.
+
+
+# regular_deck takes no parameters and returns a number 
+# between 1 and 10 with 10s being 4 times as likely as 
+# other numbers.  This is used as the deck function for
+# both players in game0.
+
 def regular_deck():
     return min(10,actr.random(13)+1)
+
+
+# fixed_threshold implements a rule for an opponent 
+# that will always hit below a fixed threshold. It
+# is used in game0 for the opponent.
 
 def fixed_threshold(cards,mc1):
 
@@ -335,12 +477,24 @@ def fixed_threshold(cards,mc1):
     else:
         return 's'
 
+# always_hit implements a rule for an opponent
+# that will always hit. It is used for the opponent
+# in game1. 
 
-
-card_list = []
-   
 def always_hit(cards,mc1):
     return 'h'
+
+# Create a variable for a list of cards, and
+# a function that will place the 6 cards onto 
+# that list for the player decks (the first 3
+# cards are the model's and the next 3 are for
+# the opponent). That deck function is used for
+# both players and represents the situation in
+# game1 where the opponent's face up card is
+# a perfect predictor for the action the model
+# needs to take to win.
+
+card_list = []
 
 def load_stacked_deck():
     c1 = 5 + actr.random(6)
@@ -369,7 +523,10 @@ def stacked_deck():
     card_list = card_list[1:]
 
     return c
-    
+  
+# function to set variables to the values needed to
+# implement game1
+  
 def game1():
     global deck1,deck2,opponent_threshold,opponent_rule,opponent_feedback,card_list
 
@@ -379,5 +536,6 @@ def game1():
     opponent_rule = always_hit
     opponent_feedback = None
 
+# call game0 to set the initial game variable values.
 
 game0()

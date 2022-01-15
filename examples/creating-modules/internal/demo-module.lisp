@@ -62,15 +62,13 @@
 (defun demo-create-chunk (demo spec)
    (if (demo-module-busy demo)
       (model-warning "Cannot handle request when busy")
-     (let* ((chunk-def (chunk-spec-to-chunk-def spec))
-            (chunk (when chunk-def
-                    (car (define-chunks-fct (list chunk-def))))))
-        (when chunk
+     (let ((chunk-def (chunk-spec-to-chunk-def spec)))
+        (when chunk-def
           (let ((delay (if (demo-module-esc demo) 
                            (demo-module-delay demo)
                          0)))
             (setf (demo-module-busy demo) t)
-            (schedule-set-buffer-chunk 'create chunk delay :module 'demo)
+            (schedule-set-buffer-chunk 'create spec delay :module 'demo)
             (schedule-event-relative delay 'free-demo-module :params (list demo) :module 'demo))))))
 
 (defun free-demo-module (demo)
@@ -117,65 +115,61 @@
 
 #|
 
-? (load "ACT-R:examples;creating-modules;internal;demo-module.lisp")
-#P"C:/Users/db30/desktop/actr7.x/examples/creating-modules/internal/demo-module.lisp"
-? (load "ACT-R:examples;creating-modules;internal;demo-model.lisp")
+> (trace demo-module-requests demo-module-queries create-demo-module reset-demo-module delete-demo-module demo-module-params)
+(DEMO-MODULE-PARAMS DELETE-DEMO-MODULE RESET-DEMO-MODULE CREATE-DEMO-MODULE DEMO-MODULE-QUERIES
+                    DEMO-MODULE-REQUESTS)
+> (reset)
+ 0[5]: (RESET-DEMO-MODULE #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL))
+ 0[5]: returned DEMO-OUTPUT
+ 0[5]: (DEMO-MODULE-PARAMS #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) (:CREATE-DELAY . 0.1))
+ 0[5]: returned 0.1
+ 0[5]: (DEMO-MODULE-PARAMS #S(DEMO-MODULE :DELAY 0.1 :ESC T :BUSY NIL) (:ESC))
+ 0[5]: returned NIL
+ 0[5]: (DEMO-MODULE-PARAMS #S(DEMO-MODULE :DELAY 0.1 :ESC NIL :BUSY NIL) (:ESC . T))
+ 0[5]: returned T
+ 0[5]: (DEMO-MODULE-PARAMS #S(DEMO-MODULE :DELAY 0.1 :ESC T :BUSY NIL) (:CREATE-DELAY . 0.15))
+ 0[5]: returned 0.15
 #|Warning: Production P2 has a condition for buffer CREATE with an isa that provides no tests. |#
-#|Warning: Production P2 makes a request to buffer OUTPUT without a query in the conditions. |#
-#P"C:/Users/db30/desktop/actr7.x/examples/creating-modules/internal/demo-model.lisp"
-? (trace demo-module-requests demo-module-queries create-demo-module reset-demo-module delete-demo-module demo-module-params)
-NIL
-? (reset)
-0> Calling (RESET-DEMO-MODULE #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL))
-<0 RESET-DEMO-MODULE returned DEMO-OUTPUT
-0> Calling (DEMO-MODULE-PARAMS #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) (:ESC))
-<0 DEMO-MODULE-PARAMS returned NIL
-0> Calling (DEMO-MODULE-PARAMS #S(DEMO-MODULE :DELAY 0.15 :ESC NIL :BUSY NIL) (:CREATE-DELAY . 0.1))
-<0 DEMO-MODULE-PARAMS returned 0.1
-0> Calling (DEMO-MODULE-PARAMS #S(DEMO-MODULE :DELAY 0.1 :ESC NIL :BUSY NIL) (:ESC . T))
-<0 DEMO-MODULE-PARAMS returned T
-0> Calling (DEMO-MODULE-PARAMS #S(DEMO-MODULE :DELAY 0.1 :ESC T :BUSY NIL) (:CREATE-DELAY . 0.15))
-<0 DEMO-MODULE-PARAMS returned 0.15
-#|Warning: Production P2 has a condition for buffer CREATE with an isa that provides no tests. |#
-#|Warning: Production P2 makes a request to buffer OUTPUT without a query in the conditions. |#
 T
-? (run 1)
+> (run 1)
      0.000   PROCEDURAL             CONFLICT-RESOLUTION
-0> Calling (DEMO-MODULE-QUERIES #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) CREATE STATE FREE)
-<0 DEMO-MODULE-QUERIES returned T
+ 0[5]: (DEMO-MODULE-QUERIES #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) CREATE STATE FREE)
+ 0[5]: returned T
      0.000   PROCEDURAL             PRODUCTION-SELECTED P1
      0.000   PROCEDURAL             QUERY-BUFFER-ACTION GOAL
      0.000   PROCEDURAL             QUERY-BUFFER-ACTION CREATE
      0.050   PROCEDURAL             PRODUCTION-FIRED P1
      0.050   PROCEDURAL             MODULE-REQUEST GOAL
      0.050   PROCEDURAL             MODULE-REQUEST CREATE
-0> Calling (DEMO-MODULE-REQUESTS #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) CREATE #S(ACT-R-CHUNK-SPEC :FILLED-SLOTS 108086391056891904 :EMPTY-SLOTS 0 :REQUEST-PARAM-SLOTS 0 :DUPLICATE-SLOTS 0 :EQUAL-SLOTS 108086391056891904 :NEGATED-SLOTS 0 :RELATIVE-SLOTS 0 :VARIABLES NIL :SLOT-VARS NIL :DEPENDENCIES NIL :SLOTS (#S(ACT-R-SLOT-SPEC :MODIFIER = :NAME SCREEN-X :VALUE 10 :TESTABLE T :VARIABLE NIL :REQUEST-PARAM NIL) #S(ACT-R-SLOT-SPEC :MODIFIER = :NAME SCREEN-Y :VALUE 20 :TESTABLE T :VARIABLE NIL :REQUEST-PARAM NIL))))
-<0 DEMO-MODULE-REQUESTS returned 15
+ 0[5]: (DEMO-MODULE-REQUESTS #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) CREATE #S(ACT-R-CHUNK-SPEC :FILLED-SLOTS 422212465065984 :EMPTY-SLOTS 0 :REQUEST-PARAM-SLOTS 0 :DUPLICATE-SLOTS 0 :EQUAL-SLOTS 422212465065984 :NEGATED-SLOTS 0 :RELATIVE-SLOTS 0 :VARIABLES NIL :SLOT-VARS NIL :DEPENDENCIES NIL :SLOTS (#2=#S(ACT-R-SLOT-SPEC :MODIFIER = :NAME SCREEN-X :VALUE 10 :VARIABLE NIL) #1=#S(ACT-R-SLOT-SPEC :MODIFIER = :NAME SCREEN-Y :VALUE 20 :VARIABLE NIL)) :TESTABLE-SLOTS (#1# #2#) ...))
+ 0[5]: returned 15
      0.050   PROCEDURAL             CLEAR-BUFFER GOAL
      0.050   PROCEDURAL             CLEAR-BUFFER CREATE
-     0.050   GOAL                   CREATE-NEW-BUFFER-CHUNK GOAL
-     0.050   GOAL                   SET-BUFFER-CHUNK GOAL CHUNK1
+     0.050   GOAL                   SET-BUFFER-CHUNK-FROM-SPEC GOAL 
      0.050   PROCEDURAL             CONFLICT-RESOLUTION
-     0.200   DEMO                   SET-BUFFER-CHUNK CREATE CHUNK0
+     0.200   DEMO                   SET-BUFFER-CHUNK-FROM-SPEC CREATE 
      0.200   DEMO                   FREE-DEMO-MODULE #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY T)
      0.200   PROCEDURAL             CONFLICT-RESOLUTION
+ 0[5]: (DEMO-MODULE-QUERIES #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) OUTPUT STATE FREE)
+ 0[5]: returned T
      0.200   PROCEDURAL             PRODUCTION-SELECTED P2
      0.200   PROCEDURAL             BUFFER-READ-ACTION CREATE
+     0.200   PROCEDURAL             QUERY-BUFFER-ACTION OUTPUT
      0.250   PROCEDURAL             PRODUCTION-FIRED P2
      0.250   PROCEDURAL             MODULE-REQUEST OUTPUT
-0> Calling (DEMO-MODULE-REQUESTS #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) OUTPUT #S(ACT-R-CHUNK-SPEC :FILLED-SLOTS 6291456 :EMPTY-SLOTS 0 :REQUEST-PARAM-SLOTS 0 :DUPLICATE-SLOTS 0 :EQUAL-SLOTS 6291456 :NEGATED-SLOTS 0 :RELATIVE-SLOTS 0 :VARIABLES NIL :SLOT-VARS NIL :DEPENDENCIES NIL :SLOTS (#S(ACT-R-SLOT-SPEC :MODIFIER = :NAME VALUE :VALUE CHUNK0-0 :TESTABLE T :VARIABLE NIL :REQUEST-PARAM NIL) #S(ACT-R-SLOT-SPEC :MODIFIER = :NAME DEMO-OUTPUT :VALUE T :TESTABLE T :VARIABLE NIL :REQUEST-PARAM NIL))))
-Value: CHUNK0-0
-<0 DEMO-MODULE-REQUESTS returned NIL
+ 0[5]: (DEMO-MODULE-REQUESTS #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL) OUTPUT #S(ACT-R-CHUNK-SPEC :FILLED-SLOTS 604462909807348947091456 :EMPTY-SLOTS 0 :REQUEST-PARAM-SLOTS 0 :DUPLICATE-SLOTS 0 :EQUAL-SLOTS 604462909807348947091456 :NEGATED-SLOTS 0 :RELATIVE-SLOTS 0 :VARIABLES NIL :SLOT-VARS NIL :DEPENDENCIES NIL :SLOTS (#2=#S(ACT-R-SLOT-SPEC :MODIFIER = :NAME VALUE :VALUE CHUNK0 :VARIABLE NIL) #1=#S(ACT-R-SLOT-SPEC :MODIFIER = :NAME DEMO-OUTPUT :VALUE T :VARIABLE NIL)) :TESTABLE-SLOTS (#1# #2#) ...))
+Value: CHUNK0
+ 0[5]: returned NIL
      0.250   PROCEDURAL             CLEAR-BUFFER CREATE
      0.250   PROCEDURAL             CLEAR-BUFFER OUTPUT
      0.250   PROCEDURAL             CONFLICT-RESOLUTION
      0.250   ------                 Stopped because no events left to process
 0.25
-26
+25
 NIL
-? (clear-all)
-0> Calling (DELETE-DEMO-MODULE #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL))
-<0 DELETE-DEMO-MODULE returned NIL
+> (clear-all)
+ 0[5]: (DELETE-DEMO-MODULE #S(DEMO-MODULE :DELAY 0.15 :ESC T :BUSY NIL))
+ 0[5]: returned NIL
 NIL
 
 |#

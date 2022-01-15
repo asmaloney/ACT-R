@@ -84,6 +84,9 @@
 ;;;             : * Switch from defconstant to the define-constant macro to 
 ;;;             :   avoid issues with SBCL (instead of redefining defconstant
 ;;;             :   for SBCL as was done previously).
+;;; 2021.07.06 Dan
+;;;             : * Changed the external evt-params to encode strings in the
+;;;             :   list since that may be important.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -223,6 +226,12 @@
                t)
        (values nil nil)))
 
+(defun external-evt-params (event)
+  (aif (get-event-by-id event)
+       (values (encode-string-names (act-r-event-params it))
+               t)
+       (values nil nil)))
+
 (add-act-r-command "evt-time" 'evt-time "Return the time of an event in seconds. Params: event-id")
 (add-act-r-command "evt-mstime" 'evt-mstime "Return the time of an event in milliseconds. Params: event-id")
 (add-act-r-command "evt-priority" 'evt-priority "Return the priority of an event. Params: event-id")
@@ -230,7 +239,7 @@
 (add-act-r-command "evt-model" 'evt-model "Return the model of an event. Params: event-id")
 (add-act-r-command "evt-module" 'evt-module "Return the module of an event. Params: event-id")
 (add-act-r-command "evt-destination" 'evt-destination "Return the destination of an event. Params: event-id")
-(add-act-r-command "evt-params" 'evt-params "Return the parameters of an event. Params: event-id")
+(add-act-r-command "evt-params" 'external-evt-params "Return the parameters of an event. Params: event-id")
 (add-act-r-command "evt-details" 'evt-details "Return the details of an event. Params: event-id")
 (add-act-r-command "evt-output" 'evt-output "Return the output setting of an event. Params: event-id")
 

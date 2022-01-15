@@ -123,44 +123,45 @@ Model definition code starts evaluating here
 Demo module's parameter function called with parameter (:ESC . T)
   :esc change noted
 Demo module's parameter function called with parameter (:DEMO-PARAM . 0.2)
-#|Warning: Production DEMO2-REQUEST-WITH-REQUEST-PARAMETER makes a request to buffer DEMO2 without a query in the conditions. |#
 > (run-it)
-     0.000   GOAL                    SET-BUFFER-CHUNK GOAL FREE NIL
-     0.000   PROCEDURAL              CONFLICT-RESOLUTION
+     0.000   GOAL                   SET-BUFFER-CHUNK GOAL FREE NIL
+     0.000   PROCEDURAL             CONFLICT-RESOLUTION
 Demo module's query function called to query the DEMO1 buffer for STATE FREE
 Demo module detects that a production will be making a request to the DEMO1 buffer
-     0.000   PROCEDURAL              PRODUCTION-SELECTED CLEAR-GOAL-REQUEST-DEMO1
-     0.000   PROCEDURAL              QUERY-BUFFER-ACTION DEMO1
-     0.050   PROCEDURAL              PRODUCTION-FIRED CLEAR-GOAL-REQUEST-DEMO1
-     0.050   PROCEDURAL              MODULE-REQUEST DEMO1
+     0.000   PROCEDURAL             PRODUCTION-SELECTED CLEAR-GOAL-REQUEST-DEMO1
+     0.000   PROCEDURAL             QUERY-BUFFER-ACTION DEMO1
+     0.050   PROCEDURAL             PRODUCTION-FIRED CLEAR-GOAL-REQUEST-DEMO1
+     0.050   PROCEDURAL             MODULE-REQUEST DEMO1
 Request to the DEMO1 buffer:
 "= STATE T"
-     0.050   PROCEDURAL              CLEAR-BUFFER GOAL
-The demo module detects that the GOAL buffer is clearing chunk FREE-0
-     0.050   PROCEDURAL              CLEAR-BUFFER DEMO1
-     0.050   DEMO                    SET-BUFFER-CHUNK DEMO1 CHUNK0
-     0.050   PROCEDURAL              CONFLICT-RESOLUTION
-     0.050   PROCEDURAL              PRODUCTION-SELECTED HARVEST-DEMO1-MOD-REQUEST-DEMO1
-     0.050   PROCEDURAL              BUFFER-READ-ACTION DEMO1
-     0.100   PROCEDURAL              PRODUCTION-FIRED HARVEST-DEMO1-MOD-REQUEST-DEMO1
-     0.100   PROCEDURAL              MODULE-MOD-REQUEST DEMO1
+     0.050   PROCEDURAL             CLEAR-BUFFER GOAL
+The demo module detects that the GOAL buffer is clearing chunk GOAL-CHUNK0 which is not storeable
+     0.050   PROCEDURAL             CLEAR-BUFFER DEMO1
+     0.050   DEMO                   SET-BUFFER-CHUNK DEMO1 CHUNK0
+     0.050   PROCEDURAL             CONFLICT-RESOLUTION
+Demo module's query function called to query the DEMO1 buffer for STATE FREE
+     0.050   PROCEDURAL             PRODUCTION-SELECTED HARVEST-DEMO1-MOD-REQUEST-DEMO1
+     0.050   PROCEDURAL             BUFFER-READ-ACTION DEMO1
+     0.050   PROCEDURAL             QUERY-BUFFER-ACTION DEMO1
+     0.100   PROCEDURAL             PRODUCTION-FIRED HARVEST-DEMO1-MOD-REQUEST-DEMO1
+     0.100   PROCEDURAL             MODULE-MOD-REQUEST DEMO1
 A buffer modification request was made to the DEMO1 buffer:
 "= SLOT 0".
-     0.100   DEMO                    MOD-BUFFER-CHUNK DEMO1
-     0.100   PROCEDURAL              CONFLICT-RESOLUTION
+     0.100   DEMO                   MOD-BUFFER-CHUNK DEMO1
+     0.100   PROCEDURAL             CONFLICT-RESOLUTION
 Demo module's query function called to query the DEMO2 buffer for STATE FREE
 Demo module detects that a production will be making a request to the DEMO2 buffer
-     0.100   PROCEDURAL              PRODUCTION-SELECTED MAKE-DEMO2-REQUEST
-     0.100   PROCEDURAL              BUFFER-READ-ACTION DEMO1
-     0.100   PROCEDURAL              QUERY-BUFFER-ACTION DEMO2
-     0.150   PROCEDURAL              PRODUCTION-FIRED MAKE-DEMO2-REQUEST
-     0.150   PROCEDURAL              MOD-BUFFER-CHUNK DEMO1
-     0.150   PROCEDURAL              MODULE-REQUEST DEMO2
+     0.100   PROCEDURAL             PRODUCTION-SELECTED MAKE-DEMO2-REQUEST
+     0.100   PROCEDURAL             BUFFER-READ-ACTION DEMO1
+     0.100   PROCEDURAL             QUERY-BUFFER-ACTION DEMO2
+     0.150   PROCEDURAL             PRODUCTION-FIRED MAKE-DEMO2-REQUEST
+     0.150   PROCEDURAL             MOD-BUFFER-CHUNK DEMO1
+     0.150   PROCEDURAL             MODULE-REQUEST DEMO2
 Request to the DEMO2 buffer:
 "= CREATE-CHUNK T"
-     0.150   PROCEDURAL              CLEAR-BUFFER DEMO2
-     0.150   PROCEDURAL              CONFLICT-RESOLUTION
-     0.150   ------                  Stopped because time limit reached
+     0.150   PROCEDURAL             CLEAR-BUFFER DEMO2
+     0.150   PROCEDURAL             CONFLICT-RESOLUTION
+     0.150   ------                 Stopped because time limit reached
 DEMO1:
   buffer empty          : NIL
   buffer full           : T
@@ -187,38 +188,38 @@ Demo module's query function called to query the DEMO2 buffer for STATE ERROR
   state error           : NIL
 Demo module's query function called to query the DEMO2 buffer for DETECT-JAM T
   detect-jam            : NIL
-DEMO1: CHUNK0-0 
-CHUNK0-0
+DEMO1: DEMO1-CHUNK0 
+DEMO1-CHUNK0
    STATE  T
    SLOT  1
 
 DEMO2: NIL 
-     0.250   DEMO                    SET-BUFFER-CHUNK DEMO2 RESULT0
-     0.250   DEMO                    FINISH-DEMO2-REQUEST
-     0.250   PROCEDURAL              CONFLICT-RESOLUTION
+     0.250   DEMO                   SET-BUFFER-CHUNK DEMO2 RESULT0
+     0.250   DEMO                   FINISH-DEMO2-REQUEST
+     0.250   PROCEDURAL             CONFLICT-RESOLUTION
 Demo module's query function called to query the DEMO2 buffer for DETECT-JAM NIL
-     0.250   PROCEDURAL              PRODUCTION-SELECTED MOD-REQUEST-TO-DEMO2
-     0.250   PROCEDURAL              BUFFER-READ-ACTION DEMO1
-     0.250   PROCEDURAL              BUFFER-READ-ACTION DEMO2
-     0.250   PROCEDURAL              QUERY-BUFFER-ACTION DEMO2
-     0.300   PROCEDURAL              PRODUCTION-FIRED MOD-REQUEST-TO-DEMO2
-     0.300   PROCEDURAL              MODULE-MOD-REQUEST DEMO2
+     0.250   PROCEDURAL             PRODUCTION-SELECTED MOD-REQUEST-TO-DEMO2
+     0.250   PROCEDURAL             BUFFER-READ-ACTION DEMO1
+     0.250   PROCEDURAL             BUFFER-READ-ACTION DEMO2
+     0.250   PROCEDURAL             QUERY-BUFFER-ACTION DEMO2
+     0.300   PROCEDURAL             PRODUCTION-FIRED MOD-REQUEST-TO-DEMO2
+     0.300   PROCEDURAL             MODULE-MOD-REQUEST DEMO2
 A buffer modification request was made to the DEMO2 buffer:
 "= ANSWER 10".
-     0.300   PROCEDURAL              CONFLICT-RESOLUTION
+     0.300   PROCEDURAL             CONFLICT-RESOLUTION
 Demo module's query function called to query the DEMO2 buffer for DETECT-JAM NIL
-     0.300   PROCEDURAL              PRODUCTION-SELECTED MOD-REQUEST-TO-DEMO2
-     0.300   PROCEDURAL              BUFFER-READ-ACTION DEMO1
-     0.300   PROCEDURAL              BUFFER-READ-ACTION DEMO2
-     0.300   PROCEDURAL              QUERY-BUFFER-ACTION DEMO2
-     0.350   PROCEDURAL              PRODUCTION-FIRED MOD-REQUEST-TO-DEMO2
-     0.350   PROCEDURAL              MODULE-MOD-REQUEST DEMO2
+     0.300   PROCEDURAL             PRODUCTION-SELECTED MOD-REQUEST-TO-DEMO2
+     0.300   PROCEDURAL             BUFFER-READ-ACTION DEMO1
+     0.300   PROCEDURAL             BUFFER-READ-ACTION DEMO2
+     0.300   PROCEDURAL             QUERY-BUFFER-ACTION DEMO2
+     0.350   PROCEDURAL             PRODUCTION-FIRED MOD-REQUEST-TO-DEMO2
+     0.350   PROCEDURAL             MODULE-MOD-REQUEST DEMO2
 A buffer modification request was made to the DEMO2 buffer:
 "= ANSWER 10".
 #|Warning: Demo module's demo2 buffer can only process one request at a time. |#
-     0.350   PROCEDURAL              CONFLICT-RESOLUTION
+     0.350   PROCEDURAL             CONFLICT-RESOLUTION
 Demo module's query function called to query the DEMO2 buffer for DETECT-JAM NIL
-     0.350   ------                  Stopped because time limit reached
+     0.350   ------                 Stopped because time limit reached
 DEMO2:
   buffer empty          : NIL
   buffer full           : T
@@ -233,18 +234,20 @@ Demo module's query function called to query the DEMO2 buffer for STATE ERROR
   state error           : NIL
 Demo module's query function called to query the DEMO2 buffer for DETECT-JAM T
   detect-jam            : T
-DEMO2: RESULT0-0 [RESULT0]
-RESULT0-0
+DEMO2: DEMO2-CHUNK0 [RESULT0]
+DEMO2-CHUNK0
    DEMO-RESULT  T
 
-     0.500   DEMO                    MOD-BUFFER-CHUNK DEMO2
-     0.500   DEMO                    FINISH-DEMO2-REQUEST
-     0.500   PROCEDURAL              CONFLICT-RESOLUTION
+     0.500   DEMO                   MOD-BUFFER-CHUNK DEMO2
+     0.500   DEMO                   FINISH-DEMO2-REQUEST
+     0.500   PROCEDURAL             CONFLICT-RESOLUTION
+Demo module's query function called to query the DEMO2 buffer for STATE FREE
 Demo module detects that a production will be making a request to the DEMO2 buffer
-     0.500   PROCEDURAL              PRODUCTION-SELECTED DEMO2-REQUEST-WITH-REQUEST-PARAMETER
-     0.500   PROCEDURAL              BUFFER-READ-ACTION DEMO1
-     0.500   PROCEDURAL              BUFFER-READ-ACTION DEMO2
-     0.500   ------                  Stopped because time limit reached
+     0.500   PROCEDURAL             PRODUCTION-SELECTED DEMO2-REQUEST-WITH-REQUEST-PARAMETER
+     0.500   PROCEDURAL             BUFFER-READ-ACTION DEMO1
+     0.500   PROCEDURAL             BUFFER-READ-ACTION DEMO2
+     0.500   PROCEDURAL             QUERY-BUFFER-ACTION DEMO2
+     0.500   ------                 Stopped because time limit reached
 DEMO2:
   buffer empty          : NIL
   buffer full           : T
@@ -259,30 +262,30 @@ Demo module's query function called to query the DEMO2 buffer for STATE ERROR
   state error           : NIL
 Demo module's query function called to query the DEMO2 buffer for DETECT-JAM T
   detect-jam            : NIL
-DEMO2: RESULT0-0 
-RESULT0-0
+DEMO2: DEMO2-CHUNK0 
+DEMO2-CHUNK0
    ANSWER  10
    DEMO-RESULT  T
 
-     0.550   PROCEDURAL              PRODUCTION-FIRED DEMO2-REQUEST-WITH-REQUEST-PARAMETER
-     0.550   PROCEDURAL              MOD-BUFFER-CHUNK DEMO1
-     0.550   PROCEDURAL              MODULE-REQUEST DEMO2
+     0.550   PROCEDURAL             PRODUCTION-FIRED DEMO2-REQUEST-WITH-REQUEST-PARAMETER
+     0.550   PROCEDURAL             MOD-BUFFER-CHUNK DEMO1
+     0.550   PROCEDURAL             MODULE-REQUEST DEMO2
 Request to the DEMO2 buffer:
 "= :VALUE 15
 = CREATE-CHUNK T"
-     0.550   PROCEDURAL              CLEAR-BUFFER DEMO2
-The demo module detects that the DEMO2 buffer is clearing chunk RESULT0-0
-     0.550   PROCEDURAL              CONFLICT-RESOLUTION
-     0.650   DEMO                    SET-BUFFER-CHUNK DEMO2 RESULT1
-     0.650   DEMO                    FINISH-DEMO2-REQUEST
-     0.650   PROCEDURAL              CONFLICT-RESOLUTION
+     0.550   PROCEDURAL             CLEAR-BUFFER DEMO2
+The demo module detects that the DEMO2 buffer is clearing chunk DEMO2-CHUNK0 which is not storeable
+     0.550   PROCEDURAL             CONFLICT-RESOLUTION
+     0.650   DEMO                   SET-BUFFER-CHUNK DEMO2 RESULT1
+     0.650   DEMO                   FINISH-DEMO2-REQUEST
+     0.650   PROCEDURAL             CONFLICT-RESOLUTION
 Demo module's query function called to query the DEMO2 buffer for STATE FREE
 Demo module detects that a production will be making a request to the DEMO2 buffer
-     0.650   PROCEDURAL              PRODUCTION-SELECTED INVALID-DEMO2-REQUEST
-     0.650   PROCEDURAL              BUFFER-READ-ACTION DEMO1
-     0.650   PROCEDURAL              BUFFER-READ-ACTION DEMO2
-     0.650   PROCEDURAL              QUERY-BUFFER-ACTION DEMO2
-     0.650   ------                  Stopped because time limit reached
+     0.650   PROCEDURAL             PRODUCTION-SELECTED INVALID-DEMO2-REQUEST
+     0.650   PROCEDURAL             BUFFER-READ-ACTION DEMO1
+     0.650   PROCEDURAL             BUFFER-READ-ACTION DEMO2
+     0.650   PROCEDURAL             QUERY-BUFFER-ACTION DEMO2
+     0.650   ------                 Stopped because time limit reached
 DEMO2:
   buffer empty          : NIL
   buffer full           : T
@@ -297,21 +300,21 @@ Demo module's query function called to query the DEMO2 buffer for STATE ERROR
   state error           : NIL
 Demo module's query function called to query the DEMO2 buffer for DETECT-JAM T
   detect-jam            : NIL
-DEMO2: RESULT1-0 [RESULT1]
-RESULT1-0
+DEMO2: DEMO2-CHUNK0 [RESULT1]
+DEMO2-CHUNK0
    ANSWER  15
    DEMO-RESULT  T
 
-     0.700   PROCEDURAL              PRODUCTION-FIRED INVALID-DEMO2-REQUEST
-     0.700   PROCEDURAL              MODULE-REQUEST DEMO2
+     0.700   PROCEDURAL             PRODUCTION-FIRED INVALID-DEMO2-REQUEST
+     0.700   PROCEDURAL             MODULE-REQUEST DEMO2
 Request to the DEMO2 buffer:
 ""
 #|Warning: Invalid request to the demo2 buffer:
 "" |#
-     0.700   PROCEDURAL              CLEAR-BUFFER DEMO2
-The demo module detects that the DEMO2 buffer is clearing chunk RESULT1-0
-     0.700   PROCEDURAL              CONFLICT-RESOLUTION
-     0.800   ------                  Stopped because time limit reached
+     0.700   PROCEDURAL             CLEAR-BUFFER DEMO2
+The demo module detects that the DEMO2 buffer is clearing chunk DEMO2-CHUNK0 which is not storeable
+     0.700   PROCEDURAL             CONFLICT-RESOLUTION
+     0.800   ------                 Stopped because time limit reached
 DEMO2:
   buffer empty          : T
   buffer full           : NIL

@@ -13,19 +13,21 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : conflict-tree.lisp
-;;; Version     : 2.1
+;;; Version     : 3.0
 ;;; 
 ;;; Description : Code for creating and searching a simple decision tree of
 ;;;               production conditions.
 ;;; 
 ;;; Bugs        :
 ;;;
-;;; To do       : [ ] Consider handling conditions other than constants.
-;;;             : [ ] See if it can infer other things about non-equal or
-;;;             :     numeric values in creating the tree.
-;;;             : [ ] Consider extending the tree when adding new productions
+;;; To do       : [2.0] Consider handling conditions other than constants.
+;;;             : [2.0] See if it can infer other things about non-equal or
+;;;             :       numeric values in creating the tree.
+;;;             : [-] Consider extending the tree when adding new productions
 ;;;             :     on the fly - track the used tests and call build-...
-;;;             : [ ] Make the negative limit a parameter somewhere.
+;;;             :     Seems like a bad idea for performance which is the 
+;;;             :     objective of using the tree.
+;;;             : [3.0] Make the negative limit a parameter somewhere.
 ;;; 
 ;;; ----- History -----
 ;;; 2008.12.23 Dan [1.0]
@@ -65,15 +67,51 @@
 ;;;            :   branches.
 ;;; 2020.08.25 Dan
 ;;;            : * Moved the defstructs to the procedural module file.
+;;; 2021.03.31 Dan [3.0]
+;;;            : * Something broke this at some point.  Instead of just fixing
+;;;            :   it, doing some significant updating.  Just remove all the isa 
+;;;            :   conditions beforehand instead of no-oping them everywhere.
+;;;            :   Also switching to the info gain for deciding which to use
+;;;            :   which eliminates the need for the repeated 0 tests, but 
+;;;            :   that requires the real calculations and to improve that it
+;;;            :   groups the productions by the conditions they have so that
+;;;            :   the calcualtions better measure how well a condition does at
+;;;            :   splitting things (treating each production as its own class
+;;;            :   as was done previously doesn't really produce a good metric
+;;;            :   resulting in bigger trees than necessary and all the extra
+;;;            :   checks to decide when to stop).  The downside is the added
+;;;            :   computation for this calcuation...
+;;;            : * Switched from the 'doesn't test' branch being marked with
+;;;            :   :other to '=other since it's possible for someone to put the
+;;;            :   keyword value into the productions but something which starts
+;;;            :   with an = would never be a specific value since it's a
+;;;            :   variable.
+;;;            : * Don't try to extend the tree when new productions are added
+;;;            :   for now (previously it just picked some remaining condition
+;;;            :   and used that to split things).  May want to try using the
+;;;            :   gain to decide to split a leaf, but would require keeping
+;;;            :   some of the class grouping info to be efficient.
+;;; 2021.04.15 Dan
+;;;            : * Changed print-conflict-tree to output to the command trace.
+;;; 2021.04.21 Dan
+;;;            : * Fixed a place where :other hadn't been changed to '=other.
+;;; 2021.05.10 Dan
+;;;            : * Allow use with ppm by just dropping the slot tests - it's
+;;;            :   just the query and test-slot cases.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
 ;;; 
 ;;; Builds a tree from production conditions.  Initially uses all the productions
-;;; in the model definition with the ID3 algorithm to try and grow a small tree.  
+;;; in the model definition using the info. gain calculation to try and create a
+;;; small tree.  Originally used the ID3 algorithm ofr that but switched to info.
+;;; gain to alleviate some issues with detecting terminating conditions.  Not
+;;; using the normalized info. gain from the C4.5 algorithm (the updated version
+;;; of ID3) since that biases away from creating many specific classes which is
+;;; something we want here -- if a single test uniquely splits things that's what
+;;; we want instead of something that generalizes to more cases.
 ;;; If productions get added after the model is defined (through compilation or 
-;;; otherwise) it will only augment the tree if needed (a new branch at a slot 
-;;; node) otherwise they just end up in an existing leaf.
+;;; otherwise) currently they just end up in an existing leaf.
 ;;;
 ;;; One assumption in the matching is that chunk names used in constant slot 
 ;;; tests (those hard coded into the productions) will always have thier true
@@ -116,12 +154,9 @@
 ;;;
 ;;; Design Choices:
 ;;; 
-;;; For info. gain calculation it considers each production to be a separate
-;;; classification which makes entropy and gain simply based on production count.
-;;; Additional assumption in building the tree is that it stops expanding if
-;;; it finds that all possible splits are equal and no better than the current
-;;; split (0 or less info. gain).  It doesn't just stop if the gain is negative
-;;; because a "bad" split can sometimes be benifical anyway.
+;;; Using the info gain from C4.5 now because the simple entropy from ID3 and
+;;; assuming each production was its own classification had some problems with
+;;; building a "good" tree.
 ;;; 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -159,16 +194,6 @@
   (declare (ignore prod))
   (root-node-child node))
 
-(defmethod select-child ((node isa-node) prod)
-  (declare (ignorable node prod))
-  #|
-  (let ((type (aif (cr-buffer-read prod (isa-node-buffer node) (isa-node-buffer-index node))
-                   (chunk-chunk-type-fct it)
-                   nil)))
-    (if (and type (chunk-type-subtype-p-fct type (isa-node-value node)))
-        (isa-node-true node)
-      (isa-node-false node))))
-|#)
 
 (defmethod select-child ((node test-slot-node) prod)
   (let ((buffer-val (cr-buffer-slot-read prod (test-slot-node-buffer node) (test-slot-node-buffer-index node) (test-slot-node-slot-index node) (test-slot-node-slot node))))
@@ -187,7 +212,7 @@
   (let ((buffer-val (cr-buffer-slot-read prod (slot-node-buffer node) (slot-node-buffer-index node) (slot-node-slot-index node) (slot-node-slot node))))
     (aif (gethash buffer-val (slot-node-children node))
          it
-         (gethash :other (slot-node-children node)))))
+         (gethash '=other (slot-node-children node)))))
 
 
 
@@ -203,24 +228,28 @@
 (defun print-tree (node branch depth)
     
   (cond ((root-node-p node)
-         (format t "---->[root ~s]~%" (conflict-node-valid node))
+         (command-output "---->[root ~s]" (conflict-node-valid node))
          (awhen (root-node-child node)
                 (print-tree it t (+ depth 2))))
         ((leaf-node-p node)
-         (format t "~vt-~d- ~s ->[leaf ~s]~%" depth (/ depth 2) branch (conflict-node-valid node))
+         (command-output "~vt-~d- ~s ->[leaf ~s]" depth (/ depth 2) branch (conflict-node-valid node))
          )
         ((binary-test-node-p node)
-         (format t "~vt-~d- ~s ->[~s " depth (/ depth 2) branch (cr-condition-type (test-node-condition node)))
-         (case (cr-condition-type (test-node-condition node))
-           (isa (format t " ~a ~s]~%" (test-node-buffer node) (test-node-value node)))
-           (query (format t " ~a ~s ~s]~%" (test-node-buffer node) (query-node-query node) (test-node-value node)))
-           (test-slot (format t " ~a ~s ~s ~s]~%" (test-node-buffer node) (test-slot-node-slot node) (test-slot-node-test node) (test-node-value node))))
+         (command-output "~vt-~d- ~s ->[~s ~a ~s ~@[~s ~]~s]" depth (/ depth 2) branch (cr-condition-type (test-node-condition node))
+                         (test-node-buffer node)
+                         (if (eq (cr-condition-type (test-node-condition node)) 'query)
+                             (query-node-query node)
+                           (test-slot-node-slot node))
+                         (if (eq (cr-condition-type (test-node-condition node)) 'query)
+                             nil
+                           (test-slot-node-test node))
+                         (test-node-value node))
          (awhen (binary-test-node-true node)
                 (print-tree it t (+ depth 2)))
          (awhen (binary-test-node-false node)
                 (print-tree it nil (+ depth 2))))
         ((wide-test-node-p node)
-         (format t "~vt-~d- ~s ->[~s ~a ~s]~%" depth (/ depth 2) branch (cr-condition-type (test-node-condition node)) (test-node-buffer node) (slot-node-slot node))
+         (command-output "~vt-~d- ~s ->[~s ~a ~s]" depth (/ depth 2) branch (cr-condition-type (test-node-condition node)) (test-node-buffer node) (slot-node-slot node))
          (maphash (lambda (branch node)
                     (print-tree node branch (+ depth 2)))
                   (wide-test-node-children node)))))
@@ -317,15 +346,16 @@
 |#
 
 
-;;; Build the tree incrementally when a production is parsed
+;;; Build the tree incrementally when a production is added.
+;;;
 ;;; only happens after the initial tree creation - which should only be production compilation
 ;;; for most models.
 ;;; 
-;;; Don't add any more nodes than necessary i.e. if it gets to a root add the first condition and stop
+;;; Don't add any more nodes than necessary i.e. if it gets to a leaf add the first condition and stop
 ;;;
 ;;; Input: - current-tree 
 ;;;        - list of cr-condition structs valid for constants
-;;;               so the type is one of: isa, query, slot, or test-slot
+;;;               so the type is one of: query, slot, or test-slot
 ;;;        - production name
 
 
@@ -333,9 +363,11 @@
          
 
 (defmethod add-to-tree ((node leaf-node) conditions production)
-  (if conditions
-      (create-branch node (list (car conditions)) production)
-    (push-last production (leaf-node-valid node))))
+  ; just storing in leaves for now
+  ;(if conditions
+  ;(create-branch node (list (car conditions)) production)
+  (declare (ignore conditions))
+  (push-last production (leaf-node-valid node)))
 
 
 (defmethod add-to-tree ((node root-node) conditions production)
@@ -344,36 +376,12 @@
   
   (aif (root-node-child node)
        (add-to-tree it conditions production)
-       (let ((new-node (make-leaf-node :parent node :branch t :valid nil)))
-         (setf (root-node-child node) new-node)
-         (add-to-tree new-node conditions production))))
-  
-
-(defmethod add-to-tree ((node isa-node) conditions production)
-  (declare (ignorable node conditions production))       
-  #|(aif (find (isa-node-condition node) conditions :test 'cr-condition-equal)
-       ;; then it's a true test
-       (add-to-tree (isa-node-true node) (remove it conditions) production)
-       ;; check if there's some other test of the type on this buffer
-       (let* ((current (isa-node-condition node))
-              (other-types (mapcar #'cr-condition-value (remove-if-not (lambda (a) 
-                                                                        (and (eq (cr-condition-type a) (cr-condition-type current))
-                                                                             (eq (cr-condition-buffer a) (cr-condition-buffer current))))
-                                                                      conditions))))
-         
-        ; (format t "Other-types are: ~S~%" other-types)
-         
-         (if (and other-types (notany (lambda (x) (chunk-type-subtype-p-fct (cr-condition-value current) x)) other-types))
-             ;; there is a mismatch so progress down the false branch
-             ;; requires that all possible tests fail to be safe
-             (add-to-tree (isa-node-false node) conditions production)
-           ;; otherwise add it to both branches - if there's any possibility it could match
-           (progn
-             (add-to-tree (isa-node-true node) conditions production)
-             (add-to-tree (isa-node-false node) conditions production)))))
-|#
-  )
-
+       nil
+       ; Don't make a tree if there isn't one
+       ;(let ((new-node (make-leaf-node :parent node :branch t :valid nil)))
+       ;  (setf (root-node-child node) new-node)
+       ;  (add-to-tree new-node conditions production))))
+       ))
 
 (defmethod add-to-tree ((node binary-test-node) conditions production) ;; query and test-slot
   
@@ -396,30 +404,43 @@
       (if (gethash (cr-condition-value it) (slot-node-children node))
            ;; push it down the existing branch
           (add-to-tree (gethash (cr-condition-value it) (slot-node-children node)) (remove it conditions) production)
-          ;; doesn't have a branch so create one then add it
-        (let ((default (copy-conflict-tree (gethash :other (slot-node-children node)) node)))
-          (setf (gethash (cr-condition-value it) (slot-node-children node)) default)
-          (setf (conflict-node-branch default) (cr-condition-value it))
-          (add-to-tree default (remove it conditions) production)))
-      ;; otherwise add it to every branch
-      (maphash (lambda (key value)
-                 (declare (ignore key))
-                 (add-to-tree value conditions production))
-               (slot-node-children node))))
+        
+        ;; doesn't have a branch so create one then add it
+        ;; copy the default node if there is once since those may have
+        ;; a subtree already otherwise just create a leaf
+        
+        (let* ((default (gethash '=other (slot-node-children node)))
+               (new-node (if default
+                             (copy-conflict-tree default node)
+                           (make-leaf-node :parent node))))
+          
+          (setf (gethash (cr-condition-value it) (slot-node-children node)) new-node)
+          (setf (conflict-node-branch new-node) (cr-condition-value it))
+          (add-to-tree new-node (remove it conditions) production)))
+  
+      ;; need to add it to every branch and if there's not a default
+      ;; create one
+      
+      (let ((default nil))
+        (maphash (lambda (key value)
+                   (when (eq key '=other) (setf default t))
+                   (add-to-tree value conditions production))
+                 (slot-node-children node))
+        (unless default
+          (setf (gethash '=other (slot-node-children node))
+            (make-leaf-node :parent node :branch '=other :valid (list production)))))))
 
 
+#| Not going to extend the tree for now -- but may come back to this, and if so
+   should use info gain to determine whether to branch or not but that may
+   require keeping some more info in the leaves (the production class info with
+   remaining conditions) to make it easy to do the calculations
 
 (defmethod create-branch ((node leaf-node) conditions production)
   ;(format t "create-branch ~20s from ~20s~%" branch (type-of node))
   (let* ((condition (car conditions))
          (new-node (case (cr-condition-type condition)
-                     (isa 
-                      (make-isa-node :parent (conflict-node-parent node)
-                                     :branch (conflict-node-branch node)
-                                     :buffer (cr-condition-buffer condition)
-                                     :buffer-index (cr-condition-bi condition)
-                                     :value (cr-condition-value condition)
-                                     :condition condition))
+                     
                      (query
                       (make-query-node :parent (conflict-node-parent node)
                                        :branch (conflict-node-branch node)
@@ -452,8 +473,8 @@
           (setf (binary-test-node-false new-node) (make-leaf-node :parent new-node :branch nil ))
           )
       (progn
-        (let ((other-tree (make-leaf-node :parent new-node :branch :other)))
-          (setf (gethash :other (wide-test-node-children new-node)) other-tree))))
+        (let ((other-tree (make-leaf-node :parent new-node :branch '=other)))
+          (setf (gethash '=other (wide-test-node-children new-node)) other-tree))))
     
     
     ;; splice this in as the child of the leaf's parent
@@ -481,7 +502,7 @@
                     (find (car conditions) (production-implicit p) :test 'tree-condition-equal))))
         (add-to-tree new-node (when c (list c)) p-name)))))
 
-
+|#
 
 ;;; Code to copy a tree making sure not to save things that shouldn't be saved
 
@@ -527,7 +548,6 @@
   (and (eq (cr-condition-type a) (cr-condition-type b))
        (eq (cr-condition-buffer a) (cr-condition-buffer b))
        (case (cr-condition-type a)
-         (isa t)
          (slot (= (cr-condition-si a) (cr-condition-si b)))
          (query (and (eq (cr-condition-slot a) (cr-condition-slot b))
                      (eql (cr-condition-value a) (cr-condition-value b))))
@@ -537,113 +557,211 @@
          (t nil))))
 
 
+;;; Sort the root nodes based on the cannonical production order so that
+;;; using the tree should result in identical choices for 'tie' situations
+;;; and can't just build them that way now with the class based grouping 
 
-(defun split-productions-with-condition (c conditions)
-  (let ((vals
-    (cond ((eq 'slot (cr-condition-type c))
-           (let* ((r1 (mapcan (lambda (x) (copy-list (append (second x) (third x)))) conditions))
-                  (r2 (remove-if-not (lambda (x) (tree-condition-equal c x)) r1))
-                  (r3 (remove-duplicates (mapcar 'cr-condition-value r2) :test 'equalp))
-                  (r4 (cons :other r3))
-                  (results (mapcar (lambda (x) (list x nil)) r4)))
-             
-            ; (format t "Results are:  r1:~S~%r2:~S~%r3:~S~%r4:~S~%r5:~S~%" r1 r2 r3 r4 results)
-           ;  (break)
-             
-             (dolist (x conditions)
-               (aif (find c (append (second x) (third x)) :test 'cr-condition-equal)
-                    (push-last (list (first x) (remove c (second x) :test 'cr-condition-equal) (remove c (third x) :test 'cr-condition-equal))
-                          (second (find (cr-condition-value it) results :key #'car :test #'equalp)))
-                    (dolist (y results)
-                      (push-last x (second y)))))
-             results))
-          ((eq 'isa (cr-condition-type c))
-           #|(let ((results (list (list t nil) (list nil nil))))
-             (dolist (x conditions)
-               (aif (find c (append (second x) (third x)) :test 'cr-condition-equal)
-                    ;; then it's a true test
-                    (push-last (list (first x) (remove c (second x) :test 'cr-condition-equal) (remove c (third x) :test 'cr-condition-equal))
-                              (second (first results)))
-                    ;; check if there's some other test of the type on this buffer
-                    (let ((other-types (mapcar #'cr-condition-value (remove-if-not (lambda (y) (tree-condition-equal y c)) (append (second x) (third x))))))
-                      
-                      (if (and other-types (notany (lambda (y) (chunk-type-subtype-p-fct (cr-condition-value c) y)) other-types))
-                          ;; there is a mismatch so progress down the false branch
-                          ;; requires that all possible tests fail to be safe
-                          (push-last x (second (second results)))
-                        ;; otherwise add it to both branches - if there's any possibility it could match
-                        (progn
-                          (push-last x (second (first results)))
-                          (push-last x (second (second results))))))))
-             results)|#)
+(defun production-ordering (productions procedural)
+  (sort (copy-list productions) #'< :key (lambda (x) (position x (productions-list procedural) :key 'production-name))))
+
+;;; Updated the scoring to use the info gain.  Also, now group the productions
+;;; by their sets of conditions instead of treating each as a separate class 
+;;; which should allow for a more efficient tree (at the cost of more initial
+;;; calculations).
+
+(defun tree-entropy (classes) 
+  ;; s is a list of lists where each list is a 'class' of items and the car of the
+  ;; list holds the items in that class.
+
+  (let ((N (reduce '+ (mapcar (lambda (x) (length (car x))) classes) :initial-value 0)))
+    (if (zerop N)
+        0
+      (reduce '+ (mapcar (lambda (x)  
+                           (if (zerop (length (car x)))
+                               0
+                             (- (* (/ (length (car x)) N) (log (/ (length (car x)) N) 2)))))
+                   classes)))))
+
+
+(defun tree-gain (base-entropy sub-groupings)
+  ;; the sub-groupings are based on 
+  ;; the repartitioning of the sets based on a condition.
+  ;; It's a list of lists of lists where the toplevel lists
+  ;; are the possible values for the condition, the lists 
+  ;; within that are the classes, and the first list in those
+  ;; are the items.
+  (let ((N (reduce '+ (mapcar (lambda (x) (reduce '+ (mapcar (lambda (y) (length (car y))) x) :initial-value 0)) sub-groupings) :initial-value 0)))
+    (if (zerop N)
+        0
+      (- base-entropy 
+         (reduce '+ (mapcar (lambda (x) 
+                              (* (/ (reduce '+ (mapcar (lambda (y) (length (car y))) x)) N)
+                                 (tree-entropy x)))
+                      sub-groupings))))))
+
+(defun split-productions-with-condition (condition n classes)
+  
+  ;; Need to compute the entropy for the condition
+  ;; which means ignore the items without the condition
+  
+  (let (haves have-nots entropy)
+    
+    (dolist (x classes)
+      (if (assoc n (second x))
+          (push x haves)
+        (push x have-nots)))
+    
+    (setf entropy (tree-entropy haves))
+    
+    ;(pprint classes)
+    
+    
+    (if (eq 'slot (cr-condition-type condition))
+        
+        (let* ((vals (remove-duplicates (mapcar (lambda (x) (cdr (assoc n (second x)))) haves)))
+               (results (mapcar (lambda (x)
+                                  (cons x nil))
+                          vals)))
           
-          (t ; slot-test and queries are easier
-           
-           (let ((results (list (list t nil) (list nil nil))))
-             (dolist (x conditions)
-               (aif (find c (append (second x) (third x)) :test 'cr-condition-equal)
-                    (if (cr-condition-result it)
-                        (push-last (list (first x) (remove c (second x) :test 'cr-condition-equal) (remove c (third x) :test 'cr-condition-equal))
-                              (second (first results)))
-                      (push-last (list (first x) (remove c (second x) :test 'cr-condition-equal) (remove c (third x) :test 'cr-condition-equal))
-                            (second (second results))))
-                    (progn
-                      (push-last x (second (first results)))
-                      (push-last x (second (second results))))))
-             results)))))
+          ;; split the items that have it to determine the gain
+          
+          (dolist (x haves)
+            (let ((val (cdr (assoc n (second x))))
+                  (without (list (first x) (remove n (second x) :key 'car))))
+              (push without
+                    (cdr (assoc val results)))))
+          
+          ;; update their classes
+          
+          (dolist (x results)
+            (setf (cdr x)
+              (group-by-condition-class (cdr x))))
+          
+          (let* ((new-classes (mapcar 'cdr results))
+                 (gain (tree-gain entropy new-classes)))
+            
+            (when have-nots
+              
+              (dolist (y results)
+                (setf (cdr y)
+                  (append have-nots (cdr y))))
+              
+              (push (cons '=other have-nots) results)
+            
+              ;; update the classes again with the have-nots included
+            
+              (setf results (mapcar (lambda (x)
+                                      (cons (car x)
+                                            (group-by-condition-class (cdr x))))
+                              results)))
+            
+            ;(pprint results)
+            (values gain results)))
+               
+      ; test-slot and queries only have two options t or nil
+      
+      (let ((results (list (cons t nil) (cons nil nil))))
+        
+        ;; split the items that have it to determine the gain
+          
+          (dolist (x haves)
+            (let ((val (cdr (assoc n (second x))))
+                  (without (list (first x) (remove n (second x) :key 'car))))
+              (push without
+                    (cdr (if val
+                             (first results)
+                           (second results))))))
+        
+        ;; update their classes
+        
+        (dolist (x results)
+          (setf (cdr x)
+            (group-by-condition-class (cdr x))))
+          
+        (let* ((new-classes (mapcar 'cdr results))
+               (gain (tree-gain entropy new-classes)))
+            
+          (when have-nots
+            (dolist (y results)
+              (setf (cdr y)
+                (append have-nots (cdr y))))
+            
+              ;; update the classes again with the have-nots included
+              
+              (setf results (mapcar (lambda (x)
+                                      (cons (car x)
+                                            (group-by-condition-class (cdr x))))
+                              results)))
+            
+            ;(pprint results)
+            (values gain results))))))
     
-    (values (- (log (length conditions) 2) (score-tree-cases vals (length conditions))) vals)))
 
-(defun score-tree-cases (vals s)
-  (reduce #'+ (mapcar (lambda (x) (if (null (second x)) 0 (* (/ (length (second x)) s) (log (length (second x)) 2)))) vals) :initial-value 0))
 
-(defun build-tree-from-productions (branch parent conditions negative)
-  (let* ((constants (mapcan (lambda (x) (copy-list (second x))) conditions))
-         (valid-conditions (remove-duplicates constants :test #'tree-condition-equal)))
+
+(defun build-tree-from-productions (branch parent conditions classes procedural)
+  
+  (if (= (length classes) 1) ;; nothing to decide
+      (make-leaf-node :parent parent :branch branch :valid (production-ordering (first (first classes)) procedural))
+
+    ;; only consider the conditions that are actually used.
+    ;; I thought limiting that to only those where every class has it
+    ;; or there are classes with different values for the condition
+    ;; would be useful, but it can find shorter trees if all of the
+    ;; used conditions are tested though that's potentially a lot of
+    ;; extra computation...
     
- ;   (format t "Branch: ~s (~S)~%Constants: ~S~%Valid-conditions are: ~S~%" branch (mapcar #'car conditions) constants valid-conditions)
- ;   (break)
+  
+    (let ((used-conditions (remove-duplicates (mapcar 'car (reduce 'append (mapcar 'second classes))))))
+          ;(used-conditions (reduce 'append (mapcar 'second classes)))
+          ;(all-contain nil)
+          ;(diff-vals nil)
+          ;(n (length conditions))
+          ;(class-count (length classes)))
     
-    (if (or (null valid-conditions) (= (length conditions) 1))
-        (make-leaf-node :parent parent :branch branch :valid (mapcar #'first conditions))
-     (let ((best nil)
-           (val nil)
-           (groups nil)
-           (all-same t)
-           (last nil))
-       (dolist (x valid-conditions)
-         (unless (eq (cr-condition-type x) 'isa)
-         (multiple-value-bind (v g) (split-productions-with-condition x conditions)
+    ;; find the interesting cases
+    #|(dotimes (i n)
+      (let ((match (remove-if-not (lambda (x) (= x i)) used-conditions :key 'car)))
+        (when (= (length match) class-count)
+          (push i all-contain))
+        (when (> (length (remove-duplicates match :test 'equalp)) 1)
+          (push i diff-vals))))
+    
+    (setf used-conditions (remove-duplicates (append diff-vals all-contain)))
+    |#
+   
+    (if (null used-conditions) ;; nothing useful to split with
+        (make-leaf-node :parent parent :branch branch :valid (production-ordering (apply 'append (mapcar 'first classes)) procedural))
+      
+      ;; Find the condition with the best info gain ration
+      (let ((best nil)
+            (val nil)
+            (sub-nodes nil))
+      
+        (dolist (x used-conditions)
+          (let ((condition (svref conditions x)))
+          
+            (multiple-value-bind (gain subs) (split-productions-with-condition condition x classes)
            
-           ;(format t "~S: ~S~%" v x)
-           
-           (unless (or (null last) (= last v))
-             (setf all-same nil))
-           
-           (setf last v)
+           ;(format t "splitting ~S~% with ~s~% scores ~S~%" classes condition gain)
            
            (when (or (null val)
-                     (> v val))
-             (setf val v)
-             (setf groups g)
-             (setf best x)))))
+                     (> gain val))
+             (setf val gain)
+             (setf sub-nodes subs)
+             (setf best condition)))))
        
-     ;   (format t "Best(~3s): ~S ~S ~%~%" all-same val best)
+        ;(format t "Best: ~S ~S ~%~%" val sub-nodes)
+      
+      ;(break)
+      ;; No relevant conditions left to split them
+      
+        (if (or (null val) (<= val 0.0)) ;;;  should it always stop if zero or negative now?
+            
+           (make-leaf-node :parent parent :branch branch :valid (production-ordering (flatten (mapcar 'first classes)) procedural))
        
-       
-       (if (or (and negative (<= val 0.0) (> negative 3)) ;; Only make a few negative or zero splits
-               (and all-same (<= val 0.0))) ;; doesn't seem like any improvements left
-           
-           (make-leaf-node :parent parent :branch branch :valid (mapcar #'first conditions))
-       
-       (let ((new-node (case (cr-condition-type best)
-                         (isa 
-                          (make-isa-node :parent parent
-                                         :branch branch
-                                         :buffer (cr-condition-buffer best)
-                                         :buffer-index (cr-condition-bi best)
-                                         :value (cr-condition-value best)
-                                         :condition best))
+      (let* (
+             (new-node (case (cr-condition-type best)
                          (query
                           (make-query-node :parent parent
                                            :branch branch
@@ -668,58 +786,93 @@
                                           :buffer-index (cr-condition-bi best)
                                           :slot (cr-condition-slot best)
                                           :slot-index (cr-condition-si best)
-                                          :condition best)))))
+                                          :condition best))))
+             )
     
          (if (binary-test-node-p new-node)
              (progn
                (setf (binary-test-node-true new-node) 
-                 (build-tree-from-productions t new-node (second (first groups)) (if (<= val 0.0) 
-                                                                                     (if negative (1+ negative) 0)
-                                                                                   0)))
-               
-               
-               (setf (binary-test-node-false new-node) (build-tree-from-productions nil new-node (second (second groups)) (if (<= val 0.0) 
-                                                                                                                          (if negative (1+ negative) 0)
-                                                                                                                        0))))
+                 (build-tree-from-productions t new-node conditions (cdr (assoc t sub-nodes)) procedural))
+               (setf (binary-test-node-false new-node) 
+                 (build-tree-from-productions nil new-node conditions (cdr (assoc nil sub-nodes)) procedural)))
            (progn
-             (dolist (x groups)
-               (setf (gethash (first x) (wide-test-node-children new-node))
-                 (build-tree-from-productions (first x) new-node (second x) (if (<= val 0.0) 
-                                                                                (if negative (1+ negative) 0)
-                                                                              0))))))
-         new-node))))))
+             (dolist (x sub-nodes)
+               (setf (gethash (car x) (wide-test-node-children new-node))
+                 (build-tree-from-productions (car x) new-node conditions (cdr x) procedural)))))
+        new-node)))))))
     
 
+
+(defun group-by-condition-class (productions)
+  (let ((classes nil))
+    (dolist (p productions classes)
+      (aif (find (second p) classes :test 'equalp :key 'second)
+           (setf (first it) (append (first p) (first it)))
+           (push (list (first p) (second p)) classes)))))
+
 ;;; Interface to the procedural module
+
+(defun build-conflict-tree (procedural)
+  (let* ((productions-with-conditions (mapcar (lambda (x) 
+                                                (list (list (production-name x))
+                                                      (append (remove-if (lambda (x)
+                                                                           (or (eq (cr-condition-type x) 'isa)
+                                                                               (and
+                                                                                (procedural-ppm procedural) ;; param lock held by calling fn
+                                                                                (eq (cr-condition-type x) 'slot))))
+                                                                         (copy-list (production-constants x)))
+                                                              (copy-list (production-implicit x)))))
+                                        (productions-list procedural)))
+         (conditions (remove-duplicates (mapcan (lambda (x) (copy-list (second x))) productions-with-conditions) :test 'tree-condition-equal)))
+    
+    (setf conditions (coerce conditions 'vector))
+    
+    ;(pprint productions-with-conditions)
+    
+    (dolist (p productions-with-conditions)
+      (setf (second p)
+        (sort (mapcar (lambda (x)
+                        (let ((n (position x conditions :test 'tree-condition-equal))
+                              (val (if (eq 'slot (cr-condition-type x))
+                                       (cr-condition-value x)
+                                     (cr-condition-result x))))
+                          (cons n val)))
+                (second p))
+              #'< :key 'car)))
+    
+    ;(pprint conditions))
+    ;(pprint productions-with-conditions))
+    
+    
+    (setf (root-node-conditions (procedural-conflict-tree procedural)) conditions)
+    (setf (root-node-valid (procedural-conflict-tree procedural)) (mapcar 'production-name (productions-list procedural)))
+    
+    
+    (setf (root-node-child (procedural-conflict-tree procedural))
+      (build-tree-from-productions t 
+                                   (procedural-conflict-tree procedural) 
+                                   conditions
+                                   (group-by-condition-class productions-with-conditions)
+                                   procedural))))
+
+
 
 (defun add-production-to-tree (p procedural)
   (add-to-tree (procedural-conflict-tree procedural) 
                (remove-if (lambda (x)
-                            (eq (cr-condition-type x) 'isa))
+                            (or (eq (cr-condition-type x) 'isa)
+                                (and
+                                 (procedural-ppm procedural) ;; param lock held by calling fn
+                                 (eq (cr-condition-type x) 'slot))))
                           (remove-duplicates (append (production-constants p) (production-implicit p)) :test 'cr-condition-equal))
                (production-name p)))
 
+
+
 (defun remove-production-from-tree (p procedural)
   (declare (ignore p procedural))
-  (model-warning "Remove productions not recommended when :conflict-tree is set to t - tree removal not implemented."))
+  (model-warning "Removing productions not supported when :use-tree is set to t - tree removal not implemented."))
 
-(defun build-conflict-tree (procedural)
-  
-  #| simple - production at a time method
-     bad idea in general for multiple reasons
-     
-  (dolist (p (productions-list procedural))
-    (add-production-to-tree p procedural)
-    (conflict-tree-stats ))
-  |#
-  
-  (setf (root-node-valid (procedural-conflict-tree procedural)) (mapcar #'production-name (productions-list procedural)))
-  (setf (root-node-child (procedural-conflict-tree procedural))
-    (build-tree-from-productions t (procedural-conflict-tree procedural) 
-                                 (mapcar (lambda (x) (list (production-name x) (append (copy-list (production-constants x)) (copy-list (production-implicit x)))))
-                                   (productions-list procedural))
-                                 nil))
-  )
 
 (defun get-valid-productions (procedural)
   (get-valid (procedural-conflict-tree procedural) procedural))

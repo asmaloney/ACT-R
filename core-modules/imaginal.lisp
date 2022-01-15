@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : imaginal.lisp
-;;; Version     : 5.0
+;;; Version     : 6.0
 ;;; 
 ;;; Description : An actual imaginal module.
 ;;; 
@@ -150,6 +150,10 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.06.14 Dan [6.0]
+;;;             : * Allow the simple imaginal-action request to accept a chunk
+;;;             :   description list as the return value and then use that to
+;;;             :   set the buffer instead of creating a temp chunk.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -197,15 +201,18 @@
 ;;;
 ;;; The function named in the action slot is called at the time of the request,
 ;;; the imaginal buffer is cleared, and the imaginal module is marked as busy. 
-;;; The action function should return either a chunk name or nil.  If a chunk
-;;; name is returned then that chunk will be put into the imaginal buffer after
-;;; the current delay time for the imaginal module passes and the module will
-;;; then be marked as free.  If the function returns nil then after the current
-;;; imaginal delay time passes the module will be marked as free and the error
-;;; state will be set to t.  If the slots slot
-;;; is specified with a list of symbols which name valid slots for a chunk then
-;;; those slot names will be passed to the action function in the order provided 
-;;; i.e. this is what will effectively happen: (apply <action> <slots list>).  
+;;; The action function should return either a chunk name, a list of slots and
+;;; values that describe a chunk, or nil.  If a chunk name or list of slots and
+;;; values is returned then the named chunk will be copied into the imaginal 
+;;; buffer after the current delay time for the imaginal module passes and the
+;;; module will then be marked as free.  If a slots and values list is returned
+;;; then that will be used to create a new chunk in the imaginal buffer after the
+;;; current delay time passes and then the module will be marked as free.  If the
+;;; function returns nil then after the current imaginal delay time passes the 
+;;; module will be marked as free and the error state will be set to t.  If the 
+;;; slots slot is specified with a list of symbols which name valid slots for a 
+;;; chunk then those slot names will be passed to the action function in the order
+;;; provided i.e. this is what will effectively happen: (apply <action> <slots list>).  
 ;;; If the slots list is provided but not valid then no action is taken and a warning
 ;;; is printed.
 
@@ -380,6 +387,12 @@
                                                 ((chunk-p-fct (string->name c)) ;; set module free and buffer chunk
                                                  (schedule-set-buffer-chunk 'imaginal (string->name c) delay :time-in-ms t :module 'imaginal :priority -1000)
                                                  (schedule-event-relative delay 'set-imaginal-free :time-in-ms t :module 'imaginal :output nil :priority -1001 :maintenance t))
+                                                ((listp c)
+                                                 (aif (define-chunk-spec-fct (decode-string-names c))
+                                                      (schedule-set-buffer-chunk 'imaginal it delay :time-in-ms t :module 'imaginal :priority -1000)
+                                                   (progn
+                                                     (bt:acquire-lock (imaginal-module-lock instance)) ;; since the bad exit releases it
+                                                     (bad-action-exit "Invalid result from the action of an imaginal-action simple-action function."))))
                                                 (t
                                                  (bt:acquire-lock (imaginal-module-lock instance)) ;; since the bad exit releases it
                                                  (bad-action-exit "Invalid result from the action of an imaginal-action simple-action function."))))))))
@@ -433,7 +446,7 @@
    (define-parameter :vidt :valid-test 'tornil :default-value nil
           :warning "T or nil" :documentation "Variable Imaginal Delay Time"))
    
-  :version "5.0"
+  :version "6.0"
   :documentation "The imaginal module provides a goal style buffer with a delay and an action buffer for manipulating the imaginal chunk"
   :creation 'create-imaginal
   :query 'imaginal-query

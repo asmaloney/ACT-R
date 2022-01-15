@@ -81,6 +81,9 @@
 ;;;             : * Need to protect access to time using meta-p-schedule-lock.
 ;;; 2020.01.13 Dan [2.1]
 ;;;             : * Removed the lambda from the module interface. 
+;;; 2021.06.07 Dan 
+;;;             : * Deal with set-buffer-chunk and overwrite-... possibly having
+;;;             :   a chunk-spec as the second parameter.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -154,7 +157,12 @@
           (when (save-history module)
             (case (act-r-event-action event)
               (set-buffer-chunk
-               (push-last (list (first (act-r-event-params event)) "set-buffer-chunk" (printed-chunk (second (act-r-event-params event))) (printed-buffer-status (first (act-r-event-params event))))
+               (push-last (list (first (act-r-event-params event)) 
+                                "set-buffer-chunk" 
+                                (if (symbolp (second (act-r-event-params event)))
+                                    (printed-chunk (second (act-r-event-params event)))
+                                  (printed-chunk-spec (second (act-r-event-params event))))
+                                (printed-buffer-status (first (act-r-event-params event))))
                           (current-data module)))
               (clear-buffer
                (push-last (list (first (act-r-event-params event)) "clear-buffer" "" (printed-buffer-status (first (act-r-event-params event))))
@@ -163,7 +171,12 @@
                (push-last (list (first (act-r-event-params event)) "mod-buffer-chunk" (printed-chunk-spec (second (act-r-event-params event))) (printed-buffer-status (first (act-r-event-params event))))
                           (current-data module)))
               (overwrite-buffer-chunk
-               (push-last (list (first (act-r-event-params event)) "overwrite-buffer-chunk" (printed-chunk (second (act-r-event-params event))) (printed-buffer-status (first (act-r-event-params event))))
+               (push-last (list (first (act-r-event-params event)) 
+                                "overwrite-buffer-chunk" 
+                                (if (symbolp (second (act-r-event-params event)))
+                                    (printed-chunk (second (act-r-event-params event)))
+                                  (printed-chunk-spec (second (act-r-event-params event))))
+                                (printed-buffer-status (first (act-r-event-params event))))
                           (current-data module)))
               (module-request
                (push-last (list (first (act-r-event-params event)) "module-request" (printed-chunk-spec (second (act-r-event-params event))) (printed-buffer-status (first (act-r-event-params event))))

@@ -169,7 +169,7 @@ Computing activation and latency for the blended chunk
 Activation for blended chunk is: 4.8876944
      0.050   PROCEDURAL             CONFLICT-RESOLUTION
      0.058   BLENDING               BLENDING-COMPLETE
-     0.058   BLENDING               SET-BUFFER-CHUNK BLENDING CHUNK0
+     0.058   BLENDING               SET-BUFFER-CHUNK-FROM-SPEC BLENDING 
      0.058   PROCEDURAL             CONFLICT-RESOLUTION
      0.108   PROCEDURAL             PRODUCTION-FIRED P2
 BLENDED VALUE IS 2.82841 AND SIZE IS SMALL 
@@ -223,6 +223,6 @@ Not above threshold so blending failed
      0.126   PROCEDURAL             CONFLICT-RESOLUTION
      0.126   ------                 Stopped because no events left to process
 0.126
-28
+27
 NIL
 |#

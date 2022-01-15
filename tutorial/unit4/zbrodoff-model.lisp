@@ -275,7 +275,7 @@
      next        =new
      vocal-rep   =txt
    ?vocal>
-     state       free
+     preparation free
 ==>
    +vocal>
      cmd         subvocalize
@@ -298,8 +298,6 @@
      isa         problem
      result      =let
      arg2        =val
-   ?vocal>
-     state       free
    
    ?manual>
      state       free
@@ -315,14 +313,11 @@
     =goal>
      ISA         goal
      count       =val
-     target      =let
+   - target      =let
    =imaginal>
      isa         problem
-   - result      =let
-   - result      nil
+     result      =let
      arg2        =val
-   ?vocal>
-     state       free
    
    ?manual>
      state       free

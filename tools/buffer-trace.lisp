@@ -147,6 +147,9 @@
 ;;;            :   to allow specifying start and stop times.
 ;;; 2020.01.14 Dan [3.1]
 ;;;            : * Buffer-trace history constituents can't be lambdas.
+;;; 2021.06.07 Dan 
+;;;             : * Deal with set-buffer-chunk and overwrite-... possibly having
+;;;             :   a chunk-spec as the second parameter.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -294,7 +297,10 @@
               ((set-buffer-chunk overwrite-buffer-chunk)
                (let ((bn (car (act-r-event-params evt))))
                  (awhen (find bn (buffer-record-buffers (btm-current-summary btm)) :key 'buffer-summary-name)
-                        (setf (buffer-summary-chunk-name it) (string (second (act-r-event-params evt)))))))
+                        (setf (buffer-summary-chunk-name it) 
+                          (if (symbolp (second (act-r-event-params evt)))
+                              (string (second (act-r-event-params evt)))
+                            (format nil "~S" (chunk-spec-to-chunk-def (second (act-r-event-params evt)))))))))
               
               (mod-buffer-chunk
                (let ((bn (car (act-r-event-params evt))))

@@ -12,12 +12,12 @@
                (respond)(type)(new-trial)(complete-task)(ready)(retrieving-operator)(process)(retrieving-result))
 
 (add-dm
- (op1 isa operator pre start         action read                           label   word    post stimulus-read)
- (op2 isa operator pre stimulus-read action retrieve      required word    label   number  post recalled)
- (op3 isa operator pre recalled      slot   number        success  respond failure wait)
- (op4 isa operator pre respond       action type          required number                  post wait)
- (op5 isa operator pre wait          action read                           label   number  post new-trial)
- (op6 isa operator pre new-trial     action complete-task                                  post start))
+ (op1 isa operator pre start         action read     label word    post stimulus-read)
+ (op2 isa operator pre stimulus-read action retrieve required word label number post recalled)
+ (op3 isa operator pre recalled      slot   number   success respond            failure wait)
+ (op4 isa operator pre respond       action type     required number            post wait)
+ (op5 isa operator pre wait          action read     label number  post new-trial)
+ (op6 isa operator pre new-trial     action complete-task          post start))
 
 (set-all-base-levels 1000)
 
@@ -101,7 +101,7 @@
    =goal>
      step        ready)
 
-(p retireve-associate
+(p retrieve-associate
    =goal>
      isa      task
      step     retrieving-operator

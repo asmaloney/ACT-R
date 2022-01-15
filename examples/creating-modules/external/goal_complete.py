@@ -341,23 +341,15 @@ actr.add_command('query_pgoal',query,'Query function for Python goal module')
 
 def request (model,name,buffer,spec):
     chunk_desc = actr.evaluate('chunk-spec-to-chunk-def',model,spec)
-    actr.evaluate('release-chunk-spec-id',model,spec)
-
+    
     if chunk_desc:
-        actr.evaluate('schedule-event-now',model,'create_goal_buffer_chunk',[['params',[buffer,chunk_desc]],['module','goal'],['priority',-100]])
+        actr.evaluate('schedule-set-buffer-chunk',model,'goal',spec,0,[['module','goal'],['priority',-1000]])
+        actr.evaluate('schedule-event-now',model,'release-chunk-spec-id',[['params',[spec]],['module','goal'],['priority',-1001],['output',False]])
+
     else:
         actr.evaluate('print-warning',model,'Invalid request made to the goal buffer.')
 
 actr.add_command('request_pgoal',request,'Request function for Python goal module')
-
-
-def create_goal_buffer_chunk (model,buffer,chunk_desc):
-    name = actr.evaluate('define-chunks',model,chunk_desc)[0]
-    actr.evaluate('schedule-set-buffer-chunk',model,buffer,name,0,[['module','goal'],['priority',-1000]])
-    actr.evaluate('schedule-event-now',model,'purge-chunk',[['params',[name]],['module','goal'],['priority',':min'],['maintenance',True]])
-
-actr.add_command('create_goal_buffer_chunk',create_goal_buffer_chunk,"Command for goal module to put a chunk into the buffer and delete the original.")
-
 
 def buffer_mod(model,name,buffer,spec):
     actr.evaluate('schedule-mod-buffer-chunk',model,buffer,spec,0,[['module','goal'],['priority',20]])

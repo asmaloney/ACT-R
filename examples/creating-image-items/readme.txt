@@ -4,7 +4,7 @@ image item available through the AGI.
 The creating-an-image.lisp and creating-an-image.py files 
 define simple test functions which open an experiment window
 and add an image item.  If a visible window is requested then
-the .gif files from the GUI/AGI-images directory are displayed
+the .gif files from the gui/AGI-images directory are displayed
 in the visible virtual window created by the ACT-R Environment.
 Details on using the test functions can be found in the comments
 of those files.

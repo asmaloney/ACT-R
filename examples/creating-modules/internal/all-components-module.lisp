@@ -45,6 +45,8 @@
 ;;; 2020.06.01 Dan [5.0]
 ;;;             : * Define the chunk-types in the creation function instead of
 ;;;             :   the reset function now.
+;;; 2021.06.14 Dan
+;;;             : * Check the storability of the chunk in the clear buffer fn.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -373,7 +375,7 @@
 
 (defun demo-detect-clearing (instance buffer chunk)
   (declare (ignore instance))
-  (act-r-output "The demo module detects that the ~s buffer is clearing chunk ~s" buffer chunk))
+  (act-r-output "The demo module detects that the ~s buffer is clearing chunk ~s which is ~:[storable~;not storeable~]" buffer chunk (chunk-not-storable chunk)))
 
 ;;; This function will be called whenever a request to the 
 ;;; demo module will be made by a production which has been

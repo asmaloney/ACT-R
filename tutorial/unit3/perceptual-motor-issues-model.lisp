@@ -2,8 +2,8 @@
 
 (define-model perceptual-motor-issues
 
-    (sgp :seed (101 1))
-    (sgp :v t :show-focus t :trace-detail medium :er t :style-warnings nil)
+    (sgp :seed (101 0))
+    (sgp :v t :show-focus t :trace-detail medium :er t)
 
 (chunk-type letter name next previous)
 (chunk-type task letter)

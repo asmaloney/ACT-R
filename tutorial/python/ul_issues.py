@@ -1,3 +1,6 @@
+# ACT-R tutorial unit7 task for investigating utility
+# learning modeling issues.
+
 import actr
 
 def present_choose():

@@ -1,3 +1,7 @@
+# ACT-R tutorial unit 3 code for a simple task to 
+# investigate potential perceptual and motor issues
+# with models.
+
 import actr
 
 actr.load_act_r_model("ACT-R:tutorial;unit3;perceptual-motor-issues-model.lisp")

@@ -1,9 +1,38 @@
+"""
+This file implements a connection to the ACT-R remote interface
+and defines functions which can call the ACT-R commands that are
+used in the tasks from the ACT-R tutorial.
+
+The call_command function can be used to call ACT-R commands
+for which a corresponding function has not been provided.
+
+It is not "the" ACT-R interface in Python.  It is only an interface
+which is sufficient for using the ACT-R tutorial tasks from Python.
+
+There are some assumptions about how the connection is implemented
+and processed which may not be suitable for other purposes.  Also,
+a simpler interface may be more useful in other cases when speed of
+operation is important.
+
+There is an example of a simpler interface that implements only a 
+specific set of commands being made available to ACT-R in the file:
+
+examples/creating-modules/external/goal_complete.py
+
+There are of course many other ways one could also handle the
+communication process.
+
+"""
+
 import json
 import threading
 import socket
 import time
 import os
 import sys
+import __main__
+import imp
+
 
 current_connection = None
 
@@ -565,6 +594,9 @@ def pprint_chunks (*chunks):
 def chunk_slot_value (chunk_name, slot_name):
     return current_connection.evaluate_single("chunk-slot-value", chunk_name, slot_name)
 
+def buffer_slot_value (buffer_name, slot_name):
+    return current_connection.evaluate_single("buffer-slot-value", buffer_name, slot_name)
+
 def set_chunk_slot_value (chunk_name, slot_name, new_value):
     return current_connection.evaluate_single("set-chunk-slot-value", chunk_name, slot_name, new_value)
 
@@ -871,3 +903,68 @@ def permute_list(l):
 
 def call_command(command,*parameters):
     return current_connection.evaluate_single(command,*parameters)
+
+
+def import_from_path(fullpath,reload=False):
+    """ 
+    Import a file with full path specification. Allows one to
+    import from anywhere, something __import__ does not do. 
+    """
+    path, filename = os.path.split(fullpath)
+    filename, ext = os.path.splitext(filename)
+    if ext == '.py':
+        sys.path.insert(0, path)
+        module = __import__(filename)
+        if reload:   ## not used at this point
+            imp.reload(module)
+        del sys.path[0]
+        return module
+    else:
+        return False
+
+
+def env_loader(path):
+    """
+    Ugly solution to something probably not necessary,
+    but seems some novice ACT-R users that wanted to use
+    Python wanted to use the 'load ACT-R code' button for
+    the Python files too.  So, this provides a way that
+    such a button could be implemented and make the module
+    available directly from the interactive prompt from which
+    actr was imported so that it would still match the tutorial
+    descriptions.
+    """
+    global __main__  
+
+    try:
+        module=import_from_path(path)
+     
+        if module:
+            setattr(__main__,module.__name__,module)
+            return True
+        else:
+            return "Only a .py file can be imported"
+    except:
+      print("Problem with trying to import from ",path)
+      print(sys.exc_info())
+      return str(sys.exc_info()[1])
+
+
+from pathlib import Path
+
+starting_dir = Path(__file__).parent.absolute()
+
+def env_loader_no_path(file):
+    """
+    Add the current file's path to the file name given and then
+    pass it off to env_loader
+    """
+
+    return(env_loader(starting_dir.joinpath(file)))
+
+
+add_command("Python-import-from-file",env_loader,"Import a Python module and make it available directly from the interactive prompt. Params: pathname")
+    
+add_command("load-python-module-html",env_loader_no_path,"Import a python module from the directory containing the actr.py module and make it available directly from the interactive prompt. Params: filename")
+
+

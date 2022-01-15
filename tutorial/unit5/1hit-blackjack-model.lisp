@@ -3,14 +3,16 @@
 (define-model 1-hit-model 
     
   ;; do not change these parameters
-  (sgp :esc t :bll .5 :ol t :sim-hook "1hit-bj-number-sims" :cache-sim-hook-results t :er t :lf 0)
+  (sgp :esc t :bll .5 :ol t :sim-hook "1hit-bj-number-sims" 
+       :cache-sim-hook-results t :er t :lf 0)
   
   ;; adjust these as needed
   (sgp :v nil :ans .2 :mp 10.0 :rt -60)
   
   ;; This type holds all the game info 
   
-  (chunk-type game-state mc1 mc2 mc3 mstart mtot mresult oc1 oc2 oc3 ostart otot oresult state)
+  (chunk-type game-state
+     mc1 mc2 mc3 mstart mtot mresult oc1 oc2 oc3 ostart otot oresult state)
   
   ;; This chunk-type should be modified to contain the information needed
   ;; for your model's learning strategy

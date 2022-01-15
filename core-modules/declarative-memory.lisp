@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : declarative-memory.lisp
-;;; Version     : 6.6
+;;; Version     : 7.0
 ;;; 
 ;;; Description : Implements the declarative memory module.
 ;;; 
@@ -508,6 +508,11 @@
 ;;;             : * Added an :rt-value request parameter that can be used to set
 ;;;             :   a new :rt value to use during this retrieval, just like the
 ;;;             :   :mp-value changes the :mp parameter.
+;;; 2021.03.10 Dan [6.8]
+;;;             : * Set the :do-not-query parameter for goal buffer now.
+;;; 2021.06.04 Dan [7.0]
+;;;             : * When merging chunks from a buffer need to check if it's
+;;;             :   storable or not if it's being added as a new chunk.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -918,7 +923,7 @@
 (defun secondary-reset-dm-module (dm)
   (declare (ignore dm))
   
-  (sgp :dcsc-hook dm-fm-rh))
+  (sgp :dcsc-hook dm-fm-rh :do-not-query retrieval))
 
 
 (defun tertiary-reset-dm-module (dm)
@@ -1805,7 +1810,9 @@
           
           ;; otherwise add it to the list
           
-          (add-chunk-into-dm dm chunk key))))))
+          (if (chunk-not-storable chunk)
+              (add-chunk-into-dm dm (copy-chunk-fct chunk) key)
+            (add-chunk-into-dm dm chunk key)))))))
 
 ;; add-chunk-into-dm
 ;;;
@@ -2161,7 +2168,7 @@
         (define-parameter :cache-sim-hook-results :valid-test 'tornil :default-value nil
           :warning "T or nil" :documentation "Whether the results of calling a sim-hook function should be cached to avoid future calls to the hook function"))
   
-  :version "6.7" 
+  :version "7.0" 
   :documentation "The declarative memory module stores chunks from the buffers for retrieval"
   
   ;; The creation function returns a new dm structure

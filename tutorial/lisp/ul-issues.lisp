@@ -1,3 +1,6 @@
+; ACT-R tutorial unit7 task for investigating utility
+; learning modeling issues.
+
 (defun present-choose ()
   (goal-focus initial-goal)
   (schedule-event-relative 5 "utility-learning-issues-show-result" 

@@ -293,6 +293,9 @@
 ;;; 2019.12.02 Dan
 ;;;             : * Clear-dm should set the in-dm parameter to nil so that the
 ;;;             :   chunks can be added back if needed.
+;;; 2021.04.19 Dan
+;;;             : * Fixed a bug with the external definition of set-base-levels
+;;;             :   and set-base-levels-fct.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -582,14 +585,14 @@
 
 
 (defun set-base-levels-external (&rest settings)
-  (get-base-level-fct (string->name-recursive settings)))
+  (set-base-levels-fct (string->name-recursive settings)))
 
 (defun set-base-levels-fct-external (settings)
-  (get-base-level-fct (string->name-recursive settings)))
+  (set-base-levels-fct (string->name-recursive settings)))
 
 
 (add-act-r-command "set-base-levels" 'set-base-levels-external "Set the base-level activation of chunks in DM. Params: (chunk level {creation-time})*")
-(add-act-r-command "set-base-levels-fct" 'set-base-levels-external-fct "Set the base-level activation of chunks in DM. Params: ((chunk level {creation-time})*)")
+(add-act-r-command "set-base-levels-fct" 'set-base-levels-fct-external "Set the base-level activation of chunks in DM. Params: ((chunk level {creation-time})*)")
 
 (defun set-all-base-levels (base-level &optional creation-time)
   "Function to set the base-level activation of all dm chunks"

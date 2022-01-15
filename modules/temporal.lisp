@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : temporal.lisp
-;;; Version     : 3.1
+;;; Version     : 4.0
 ;;; 
 ;;; Description : Implementation of the temporal module.
 ;;; 
@@ -102,6 +102,12 @@
 ;;; 2020.07.06 Dan [3.1]
 ;;;             : * Got rid of the temporal-clear dummy function and just 
 ;;;             :   schedule nil since the details are all that matters.
+;;; 2021.03.10 Dan [3.2]
+;;;             : * Also put temporal on the do-not-query list.
+;;; 2021.06.07 Dan [4.0]
+;;;             : * Instead of using create-new-buffer-chunk just schedule 
+;;;             :   set-buffer-chunk with a spec, and create that spec at reset
+;;;             :   so it doesn't have to happen every time.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -137,7 +143,8 @@
   tick 
   ticks
   next-increment
-  record-ticks)
+  record-ticks
+  spec)
 
 (defun create-temporal-module (model-name)
   (declare (ignore model-name))
@@ -152,10 +159,11 @@
   (setf (temporal-module-next-increment instance) nil))
 
 (defun temporal-reset-2 (instance)
-  (declare (ignore instance))
+  
+  (setf (temporal-module-spec instance) (define-chunk-spec isa time))
   
   ;; Do NOT strict harvest the temporal buffer by default
-  (sgp :do-not-harvest temporal)
+  (sgp :do-not-harvest temporal :do-not-query temporal)
   )
 
 
@@ -198,9 +206,8 @@
           (if (not (verify-single-explicit-value chunk-spec 'ticks 'temporal 'time))
               (print-warning "Invalid time request made to the temporal module.")
             (progn
-              (schedule-event-now 'create-new-buffer-chunk :module 'temporal
-                                  :priority -100 :params (list 'temporal '(isa time))
-                                  :details "create-new-buffer-chunk isa time")
+              (schedule-set-buffer-chunk 'temporal (temporal-module-spec instance) 0
+                                         :module 'temporal :priority -1000)
          
               (setf (temporal-module-tick instance) 
                 (max 1 (+ (temporal-module-time-start-increment instance) 
@@ -280,7 +287,7 @@
         (define-parameter :record-ticks :valid-test 'tornil :default-value t
           :warning "t or nil" :documentation "Record each time increment as a buffer event")
         )
-  :version "3.1"
+  :version "4.0"
   :documentation "The temporal module is used to estimate short time intervals"
   :creation 'create-temporal-module
   :query 'temporal-query

@@ -18,7 +18,8 @@
 ;;; Description : No system dependent code.
 ;;;             : This file contains the Lisp to support the stepper window.
 ;;;             : 
-;;; Bugs        : 
+;;; Bugs        : [ ] Display more info in the cases when data wasn't recorded
+;;;             :     2021.01.27 fix at least stopped the warning
 ;;; 
 ;;; Todo        : [ ] Extend the possible information which can be recorded
 ;;;             :     with some sort of action triggers and data hooks.
@@ -171,6 +172,12 @@
 ;;;             : * Use suppress-undelay-cr and unsuppress-undelay-cr so that
 ;;;             :   opening and closing the stepper doesn't potentially lead to
 ;;;             :   scheduling a new conflict-resolution.
+;;; 2021.01.27 Dan
+;;;             : * Added a safety check to displaying the production-fired
+;;;             :   details since it's possible that the stepper wasn't open
+;;;             :   when the production was selected and thus there's no info
+;;;             :   recorded.  In that case it will just print the name in the
+;;;             :   list, but none of the details.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -675,7 +682,11 @@
                                       (eq (evt-action event) 'production-fired))
                                   (list (with-model-eval (evt-model event)
                                           (if (eq (evt-action event) 'production-fired) 
-                                              (list (car (stepper-module-cs (get-module stepper))))
+                                              ;; catch when no saved data
+                                              (if (car (stepper-module-cs (get-module stepper)))
+                                                  (list (car (stepper-module-cs (get-module stepper))))
+                                                ;; get production named in the event
+                                                (list (production-name (first (evt-params event)))))
                                             (stepper-module-cs (get-module stepper))))
                                         (if (eq (evt-action event) 'production-selected) t nil)
                                         "Possible Productions" "Production Parameters" "Bindings" "Production"))
@@ -688,10 +699,11 @@
                                  (t
                                   (list nil nil "" "" "" ""))))
           (saved-details (cond ((or (eq (evt-action event) 'production-selected)
-                                      (eq (evt-action event) 'production-fired))
+                                    (eq (evt-action event) 'production-fired))
                                 (with-model-eval (evt-model event)
                                   (mapcar (lambda (p)
-                                            (let* ((prod (get-production p))
+                                            (when p
+                                              (let* ((prod (get-production p))
                                                    (bindings (when prod
                                                                (bt:with-recursive-lock-held ((production-lock prod)) 
                                                                  (mapcar (lambda (x)
@@ -714,7 +726,7 @@
                                                                                 (second x))
                                                                               (third x)))
                                                       bindings)
-                                                    )))
+                                                    ))))
                                     
                                     (if (eq (evt-action event) 'production-fired) 
                                         (list (car (stepper-module-cs (get-module stepper))))

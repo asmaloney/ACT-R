@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : speech.lisp
-;;; Version     : 7.0
+;;; Version     : 7.1
 ;;; 
 ;;; Description : Source code for the ACT-R/PM Speech Module.  This Module
 ;;;             : is pretty brain-damaged but should get the job done
@@ -176,6 +176,11 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.03.18 Dan [7.1]
+;;;             : * The minimum articulation time is now the syllable-rate
+;;;             :   not a fraction of that for shorter strings.  For longer
+;;;             :   strings it is still computed at the sub-syllable level i.e.
+;;;             :   syllable-rate * (length/char-per-syllable).
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -193,7 +198,7 @@
    (device :accessor device :initform nil)
    (notify-subvocalize :accessor notify-subvocalize :initform nil))
   (:default-initargs
-    :version-string "7.0"
+    :version-string "7.1"
     :name :SPEECH))
 
 
@@ -206,7 +211,7 @@
   (let ((time
          (aif (gethash text (art-time-ht spch-mod))
               it
-              (round (* (s-rate spch-mod) (/ (length text) (char-per-syllable spch-mod)))))))
+              (round (max (s-rate spch-mod) (* (s-rate spch-mod) (/ (length text) (char-per-syllable spch-mod))))))))
     (if time-in-ms time (ms->seconds time))))
 
 

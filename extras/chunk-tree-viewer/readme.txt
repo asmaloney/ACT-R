@@ -11,7 +11,7 @@ Conference on Cognitive Modeling. July 27-29, 2007, Ann Arbor, Michigan
 which is also included as HeibergHarrisBall.pdf.
 
 The tool is included with the Environment but disabled by default. To 
-enable the tool you must rename a file in the environment/GUI/dialogs
+enable the tool you must rename a file in the environment/gui/dialogs
 directory of the ACT-R distribution (either the standalone or the source
 code version).  The file named "35a-chunk-tree.tcx" must be renamed to
 "35a-chunk-tree.tcl" before starting the Environment.  Doing so will

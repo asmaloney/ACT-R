@@ -32,7 +32,7 @@
       number      =num1
    )
 
-(P increment
+(p increment
    =goal>
       ISA         count-from
       count       =num1
@@ -51,7 +51,7 @@
    !output!       (=num1)
    )
 
-(P stop
+(p stop
    =goal>
       ISA         count-from
       count       =num

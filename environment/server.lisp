@@ -282,6 +282,14 @@
 ;;; 2019.11.01 Dan
 ;;;             : * Change run-environment for the Macs to run the application
 ;;;             :   directly because it's not in an app bundle anymore.
+;;; 2021.05.11 Dan
+;;;             : * Changed reference to GUI directory to gui to avoid issues
+;;;             :   with logical pathnames (particularlly in SBCL).
+;;; 2021.09.15 Dan
+;;;             : * The Linux environment application now has dashes instead
+;;;             :   of spaces in its name.
+;;;             : * Also fixed the Linux and macOS versions of ACL to run
+;;;             :   the correct program.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -310,7 +318,7 @@
 (defun run-environment ()
   (let ((c (ccl::cd "."))) 
     (ccl::cd "ACT-R:environment")
-    (run-program "./start environment Linux" nil :wait nil)
+    (run-program "./start-environment-Linux" nil :wait nil)
     (ccl::cd c)))
 
 #+(and :ccl :darwin)
@@ -342,15 +350,15 @@
 (defun run-environment ()
   (let ((c (current-directory)))
     (chdir "ACT-R:environment")
-    (run-shell-command "'Start Environment OSX.app/Contents/MacOS/start-environment-osx'" :wait nil)
+    (run-shell-command "./start-environment-osx" :wait nil)
     (chdir c)))
 
 
 #+(and :allegro :linux)
 (defun run-environment ()
   (let ((c (current-directory)))
-    (chdir "ACT-R:environment;GUI")
-    (run-shell-command "./starter.tcl" :wait nil)
+    (chdir "ACT-R:environment")
+    (run-shell-command "./start-environment-Linux" :wait nil)
     (chdir c)))
 
 (unless (fboundp 'run-environment)

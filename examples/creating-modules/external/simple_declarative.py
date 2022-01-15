@@ -217,9 +217,20 @@ def buffer_cleared(name,buffer,chunk):
 
         actr.call_command("merge-chunks",match[0],chunk)
 
-    else:  # otherwise just add it as a new chunk
+    else:  # otherwise check if we can store it
 
-        add_chunk_to_dm(module,chunk)
+        if actr.call_command("chunk-not-storable",chunk) :
+
+            # can't store it so store a copy
+
+            copy = actr.copy_chunk(chunk)
+            add_chunk_to_dm(module,copy)
+
+        else :
+
+            # safe to store it directly 
+
+            add_chunk_to_dm(chunk)
 
 
     module.lock.release()

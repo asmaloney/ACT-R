@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : goal-compilation.lisp
-;;; Version     : 4.0
+;;; Version     : 6.0
 ;;; 
 ;;; Description : Production compilation GOAL style definition.
 ;;; 
@@ -71,6 +71,20 @@
 ;;;             :    name -- the symbol naming the buffer or bang action
 ;;;             :    token -- the symbol of the production item for op and name
 ;;;             :    slots -- list of slot-spec lists
+;;; 2021.02.05 Dan [5.0]
+;;;             : * Allowing the 9,8 case to happen if the mod in p1 is an empty
+;;;             :   mod when the buffer is strict harvested and then just drop
+;;;             :   the empty mod.
+;;; 2021.02.10 Dan [6.0]
+;;;             : * There isn't a pre-instantiation step for variablized slots
+;;;             :   now so that needs to be done here instead for both mapping
+;;;             :   and composition.
+;;;             : * Needs to deal with var->var, const->var, var->const, and
+;;;             :   the possibility of multiple vars being bound to the same
+;;;             :   slot name.
+;;; 2021.02.23 Dan
+;;;             : * Wasn't catching the possible action to action mappings for
+;;;             :   dynamic slots, only the action to condition.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -95,9 +109,10 @@
   (declare (ignore p1))
   
   (let* ((ppm (compilation-module-ppm module))
+         (p1-bindings (previous-production-bindings (compilation-module-previous module)))
+         (p2-bindings (production-compilation-instan (production-name p2)))
          (bindings (when ppm 
-                     (append (previous-production-bindings (compilation-module-previous module))
-                             (production-compilation-instan (production-name p2))))))
+                     (append p1-bindings p2-bindings))))
     
     (cond (;; The RHS + to LHS = case -- also overrides when there's a RHS * in p1
            (and (find p1-index '(4 12 13 44))
@@ -107,18 +122,82 @@
            ;; here the slots of interest are just the intersection of the two sets
            
            (let* ((mappings nil)
-                  (p1-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\+ (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s))))
-                  (p2-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p2-s))))
-                  (interesting-slots (intersection (mapcan (lambda (x)
-                                                             (when (eq (spec-slot-op x) '=)
-                                                               (list (spec-slot-name x))))
-                                                     p1-slots)
-                                                   (mapcan (lambda (x)
-                                                               (when (eq (spec-slot-op x) '=)
-                                                                 (list (spec-slot-name x))))
-                                                     p2-slots))))
+                  (original-p1-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\+ (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s))))
+                  (original-p2-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p2-s))))
+                  (original-p2-rhs-slots (compose-rep-slots (find-if (lambda (x) (and (eq buffer (compose-rep-name x))
+                                                                                      (or (char= #\= (compose-rep-op x))
+                                                                                          (char= #\* (compose-rep-op x)))))
+                                                                     (second p2-s))))
+                  (p1-var-slots (mapcar (lambda (x) (assoc (spec-slot-name x) p1-bindings)) (remove-if-not 'chunk-spec-variable-p original-p1-slots :key 'spec-slot-name)))
+                  (p2-var-slots (mapcar (lambda (x) (assoc (spec-slot-name x) p2-bindings)) (remove-if-not 'chunk-spec-variable-p original-p2-slots :key 'spec-slot-name)))
+                  (p2-rhs-var-slots (mapcar (lambda (x) (assoc (spec-slot-name x) p2-bindings)) (remove-if-not 'chunk-spec-variable-p original-p2-rhs-slots :key 'spec-slot-name)))
+                  
+                  (p1-slots (instantiate-slot-names
+                             original-p1-slots
+                             p1-bindings))
+                  (p2-slots (instantiate-slot-names
+                             original-p2-slots
+                             p2-bindings))
+                  (p2-rhs-slots (instantiate-slot-names
+                                 original-p2-rhs-slots
+                                 p2-bindings))
+                  (interesting-slots (remove-duplicates (append (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p1-slots)
+                                                                (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p2-slots)
+                                                                (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p2-rhs-slots)))))
              
-             (dolist (slot (remove-duplicates interesting-slots))
+                          
+             (dolist (slot interesting-slots)
+               
+               (when (or p1-var-slots p2-var-slots p2-rhs-var-slots) ;; there are dynamic slots which may need to be mapped
+                                                                     ;; if the same slot is variablized in both or a var slot maps
+                                                                     ;; to a constant slot in either direction (multiple options
+                                                                     ;; possible as well as multiple variables matching the same slot)
+                 
+                 
+                 (when (and (rassoc slot p1-var-slots)  ;; it's a variable in action and condition both
+                            (rassoc slot p2-var-slots)) ;; so need to add all the variable to variable mappings  
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slots)))
+                     (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-var-slots)))
+                       (push (cons p1-var p2-var) mappings))))
+                 
+                 (when (and (rassoc slot p1-var-slots)  ;; it's a variable in both actions
+                            (rassoc slot p2-rhs-var-slots)) ;; so need to add all the variable to variable mappings  
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slots)))
+                     (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-rhs-var-slots)))
+                       (push (cons p1-var p2-var) mappings))))
+                 
+                 
+                 (when (and (rassoc slot p1-var-slots)  ;; it's a variable in p1 and const in p2 so need to instantiate
+                            (find slot original-p2-slots :key 'spec-slot-name)) ;; all p1 vars
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slots)))
+                     (push (cons p1-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p1-var-slots)  ;; it's a variable in p1 and const in p2 action so need to instantiate
+                            (find slot original-p2-rhs-slots :key 'spec-slot-name)) ;; all p1 vars
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slots)))
+                     (push (cons p1-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p2-var-slots)  ;; it's a variable in p2 and const in p1 so need to instantiate
+                            (find slot original-p1-slots :key 'spec-slot-name)) ;; all p2 vars
+                   (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-var-slots)))
+                     (push (cons p2-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p2-rhs-var-slots)  ;; it's a variable in p2 action and const in p1 so need to instantiate
+                            (find slot original-p1-slots :key 'spec-slot-name)) ;; all p2 vars
+                   (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-rhs-var-slots)))
+                     (push (cons p2-var slot) mappings))))
+               
+               
+                              
                (dolist (p1slots (remove-if-not (lambda (x) (and (eq (spec-slot-op x) '=) (eq (spec-slot-name x) slot))) p1-slots))
                  (dolist (p2slots (remove-if-not (lambda (x) (and (eq (spec-slot-op x) '=) (eq (spec-slot-name x) slot))) p2-slots))
                    (if (constant-value-p (spec-slot-value p2slots) module)
@@ -144,25 +223,97 @@
            
            
            (let* ((mappings nil)
-                  (p1-slotsa (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p1-s))))
-                  (p1-slotsb (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s))))
-                  (p2-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p2-s))))
+                  (original-p1a-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p1-s))))
+                  (original-p1b-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s))))
+                  
+                  (original-p2-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p2-s))))
+                  (original-p2-rhs-slots (compose-rep-slots (find-if (lambda (x) (and (eq buffer (compose-rep-name x))
+                                                                                      (or (char= #\= (compose-rep-op x))
+                                                                                          (char= #\* (compose-rep-op x)))))
+                                                                     (second p2-s))))
+                  
+                  (p1-var-slotsa (mapcar (lambda (x) (assoc (spec-slot-name x) p1-bindings)) (remove-if-not 'chunk-spec-variable-p original-p1a-slots :key 'spec-slot-name)))
+                  (p1-var-slotsb (mapcar (lambda (x) (assoc (spec-slot-name x) p1-bindings)) (remove-if-not 'chunk-spec-variable-p original-p1b-slots :key 'spec-slot-name)))
+                  (p2-var-slots (mapcar (lambda (x) (assoc (spec-slot-name x) p2-bindings)) (remove-if-not 'chunk-spec-variable-p original-p2-slots :key 'spec-slot-name)))
+                  (p2-rhs-var-slots (mapcar (lambda (x) (assoc (spec-slot-name x) p2-bindings)) (remove-if-not 'chunk-spec-variable-p original-p2-rhs-slots :key 'spec-slot-name)))
+                  
+                  (p1-slotsa (instantiate-slot-names
+                             original-p1a-slots
+                             p1-bindings))
+                  (p1-slotsb (instantiate-slot-names
+                             original-p1b-slots
+                             p1-bindings))
+                  (p2-slots (instantiate-slot-names
+                             original-p2-slots
+                             p2-bindings))
+                  (p2-rhs-slots (instantiate-slot-names
+                                 original-p2-rhs-slots
+                                 p2-bindings))
                   
                   (p1-slots (append (remove-if (lambda (x)
                                                    (or (not (eq (spec-slot-op x) '=))
                                                        (find (spec-slot-name x) p1-slotsb :key 'spec-slot-name)))
                                                p1-slotsa)
                                     p1-slotsb))
-                  (interesting-slots  (intersection (mapcan (lambda (x) 
-                                                              (list (spec-slot-name x)))
-                                                      p1-slots)
-                                                    (mapcan (lambda (x)
-                                                                (when (eq (spec-slot-op x) '=)
-                                                                  (list (spec-slot-name x))))
-                                                      p2-slots))))
+                  
+                  (p1-var-slots (remove-duplicates (append p1-var-slotsa p1-var-slotsb) :test 'equalp))
+                  
+                  (interesting-slots (remove-duplicates (append (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p1-slots)
+                                                                (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p2-slots)
+                                                                (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p2-rhs-slots)))))
              
-                                     
-             (dolist (slot (remove-duplicates interesting-slots))
+             (dolist (slot interesting-slots)
+               
+               (when (or p1-var-slots p2-var-slots p2-rhs-var-slots) ;; there are dynamic slots which may need to be mapped
+                                                                     ;; if the same slot is variablized in both or a var slot maps
+                                                                     ;; to a constant slot in either direction (multiple options
+                                                                     ;; possible as well as multiple variables matching the same slot)
+                 
+                 
+                 (when (and (rassoc slot p1-var-slots)  ;; it's a variable in both
+                            (rassoc slot p2-var-slots)) ;; so need to add all the variable to variable mappings  
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slots)))
+                     (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-var-slots)))
+                       (push (cons p1-var p2-var) mappings))))
+                 
+                 (when (and (rassoc slot p1-var-slotsb)  ;; it's a variable in both actions
+                            (rassoc slot p2-rhs-var-slots)) ;; so need to add all the variable to variable mappings  
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slotsb)))
+                     (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-rhs-var-slots)))
+                       (push (cons p1-var p2-var) mappings))))
+                 
+                 (when (and (rassoc slot p1-var-slots)  ;; it's a variable in p1 and const in p2 so need to instantiate
+                            (find slot original-p2-slots :key 'spec-slot-name)) ;; all p1 vars
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slots)))
+                     (push (cons p1-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p1-var-slotsb)  ;; it's a variable in p1 and const in p2 action so need to instantiate
+                            (find slot original-p2-rhs-slots :key 'spec-slot-name)) ;; all p1 vars
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slotsb)))
+                     (push (cons p1-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p2-var-slots)  ;; it's a variable in p2 and const in p1 (somewhere) so need to instantiate
+                            (or                         ;; all p2 vars
+                             (find slot original-p1a-slots :key 'spec-slot-name)
+                             (find slot original-p1b-slots :key 'spec-slot-name))) 
+                   (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-var-slots)))
+                     (push (cons p2-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p2-rhs-var-slots)  ;; it's a variable in p2 action and const in p1 so need to instantiate
+                            (find slot original-p1b-slots :key 'spec-slot-name)) ;; all p2 vars
+                   (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-rhs-var-slots)))
+                     (push (cons p2-var slot) mappings))))
+               
+               
                (dolist (p1slots (remove-if-not (lambda (x) (eq (spec-slot-name x) slot)) p1-slots))
                  (dolist (p2slots (remove-if-not (lambda (x) (eq (spec-slot-name x) slot)) p2-slots))
                    
@@ -190,25 +341,97 @@
            
            
            (let* ((mappings nil)
-                  (p1-slotsa (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p1-s))))
-                  (p1-slotsb (compose-rep-slots (find-if (lambda (x) (and (char= #\* (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s))))
-                  (p2-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p2-s))))
+                  (original-p1a-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p1-s))))
+                  (original-p1b-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\* (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s))))
+                  
+                  (original-p2-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p2-s))))
+                  (original-p2-rhs-slots (compose-rep-slots (find-if (lambda (x) (and (eq buffer (compose-rep-name x))
+                                                                                      (or (char= #\= (compose-rep-op x))
+                                                                                          (char= #\* (compose-rep-op x)))))
+                                                                     (second p2-s))))
+                  
+                  (p1-var-slotsa (mapcar (lambda (x) (assoc (spec-slot-name x) p1-bindings)) (remove-if-not 'chunk-spec-variable-p original-p1a-slots :key 'spec-slot-name)))
+                  (p1-var-slotsb (mapcar (lambda (x) (assoc (spec-slot-name x) p1-bindings)) (remove-if-not 'chunk-spec-variable-p original-p1b-slots :key 'spec-slot-name)))
+                  (p2-var-slots (mapcar (lambda (x) (assoc (spec-slot-name x) p2-bindings)) (remove-if-not 'chunk-spec-variable-p original-p2-slots :key 'spec-slot-name)))
+                  (p2-rhs-var-slots (mapcar (lambda (x) (assoc (spec-slot-name x) p2-bindings)) (remove-if-not 'chunk-spec-variable-p original-p2-rhs-slots :key 'spec-slot-name)))
+                  
+                  (p1-slotsa (instantiate-slot-names
+                             original-p1a-slots
+                             p1-bindings))
+                  (p1-slotsb (instantiate-slot-names
+                             original-p1b-slots
+                             p1-bindings))
+                  (p2-slots (instantiate-slot-names
+                             original-p2-slots
+                             p2-bindings))
+                  (p2-rhs-slots (instantiate-slot-names
+                                 original-p2-rhs-slots
+                                 p2-bindings))
                   
                   (p1-slots (append (remove-if (lambda (x)
                                                    (or (not (eq (spec-slot-op x) '=))
                                                        (find (spec-slot-name x) p1-slotsb :key 'spec-slot-name)))
                                                p1-slotsa)
                                     p1-slotsb))
-                  (interesting-slots  (intersection (mapcan (lambda (x) 
-                                                              (list (spec-slot-name x)))
-                                                      p1-slots)
-                                                    (mapcan (lambda (x)
-                                                                (when (eq (spec-slot-op x) '=)
-                                                                  (list (spec-slot-name x))))
-                                                      p2-slots))))
+                  
+                  (p1-var-slots (remove-duplicates (append p1-var-slotsa p1-var-slotsb) :test 'equalp))
+                  
+                  (interesting-slots (remove-duplicates (append (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p1-slots)
+                                                                (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p2-slots)
+                                                                (mapcan (lambda (x)
+                                                                          (when (eq (spec-slot-op x) '=)
+                                                                            (list (spec-slot-name x))))
+                                                                  p2-rhs-slots)))))
              
-                                     
-             (dolist (slot (remove-duplicates interesting-slots))
+             (dolist (slot interesting-slots)
+               
+               (when (or p1-var-slots p2-var-slots p2-rhs-var-slots) ;; there are dynamic slots which may need to be mapped
+                                                                     ;; if the same slot is variablized in both or a var slot maps
+                                                                     ;; to a constant slot in either direction (multiple options
+                                                                     ;; possible as well as multiple variables matching the same slot)
+                 
+                 
+                 (when (and (rassoc slot p1-var-slots)  ;; it's a variable in both
+                            (rassoc slot p2-var-slots)) ;; so need to add all the variable to variable mappings  
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slots)))
+                     (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-var-slots)))
+                       (push (cons p1-var p2-var) mappings))))
+                 
+                 (when (and (rassoc slot p1-var-slotsb)  ;; it's a variable in both actions
+                            (rassoc slot p2-rhs-var-slots)) ;; so need to add all the variable to variable mappings  
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slotsb)))
+                     (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-rhs-var-slots)))
+                       (push (cons p1-var p2-var) mappings))))
+                 
+                 (when (and (rassoc slot p1-var-slots)  ;; it's a variable in p1 and const in p2 so need to instantiate
+                            (find slot original-p2-slots :key 'spec-slot-name)) ;; all p1 vars
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slots)))
+                     (push (cons p1-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p1-var-slotsb)  ;; it's a variable in p1 and const in p2 action so need to instantiate
+                            (find slot original-p2-rhs-slots :key 'spec-slot-name)) ;; all p1 vars
+                   (dolist (p1-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p1-var-slotsb)))
+                     (push (cons p1-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p2-var-slots)  ;; it's a variable in p2 and const in p1 (somewhere) so need to instantiate
+                            (or                         ;; all p2 vars
+                             (find slot original-p1a-slots :key 'spec-slot-name)
+                             (find slot original-p1b-slots :key 'spec-slot-name))) 
+                   (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-var-slots)))
+                     (push (cons p2-var slot) mappings)))
+                 
+                 (when (and (rassoc slot p2-rhs-var-slots)  ;; it's a variable in p2 action and const in p1 so need to instantiate
+                            (find slot original-p1b-slots :key 'spec-slot-name)) ;; all p2 vars
+                   (dolist (p2-var (mapcar 'car (remove-if-not (lambda (x) (eq (cdr x) slot)) p2-rhs-var-slots)))
+                     (push (cons p2-var slot) mappings))))
+               
+               
                (dolist (p1slots (remove-if-not (lambda (x) (eq (spec-slot-name x) slot)) p1-slots))
                  (dolist (p2slots (remove-if-not (lambda (x) (eq (spec-slot-name x) slot)) p2-slots))
                    
@@ -245,18 +468,28 @@
            
            
            (let* ((mappings nil)
-                  (p1-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p1-s))))
-                  (p2-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p2-s))))
+                  (original-p1-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\+ (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p1-s))))
+                  (original-p2-slots (compose-rep-slots (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (first p2-s))))
+                  
+                  (p1-slots (instantiate-slot-names
+                             original-p1-slots
+                             p1-bindings))
+                  (p2-slots (instantiate-slot-names
+                             original-p2-slots
+                             p2-bindings))
                   (interesting-slots (intersection (mapcan (lambda (x)
-                                                               (when (eq (spec-slot-op x) '=)
-                                                                  (list (spec-slot-name x))))
+                                                             (when (eq (spec-slot-op x) '=)
+                                                               (list (spec-slot-name x))))
                                                      p1-slots)
                                                    (mapcan (lambda (x)
                                                                (when (eq (spec-slot-op x) '=)
-                                                                  (list (spec-slot-name x))))
+                                                                 (list (spec-slot-name x))))
                                                      p2-slots))))
              
-             (dolist (slot (remove-duplicates interesting-slots))
+             (dolist (slot interesting-slots)
+               
+               ;; no dynamic slot issues because can't assume anything from just the conditions
+               
                (dolist (p1slots (remove-if-not (lambda (x) (and (eq (spec-slot-op x) '=) (eq (spec-slot-name x) slot))) p1-slots))
                  (dolist (p2slots (remove-if-not (lambda (x) (and (eq (spec-slot-op x) '=) (eq (spec-slot-name x) slot))) p2-slots))
                    (if (constant-value-p (spec-slot-value p2slots) module)
@@ -273,7 +506,6 @@
            nil))))
 
 (defun COMPOSE-GOAL-BUFFER (buffer module p1 p1-s p1-index p2 p2-s p2-index)
-  (declare (ignore module p2 p2-index))
   ;; This is based on the limited set of conditions that can
   ;; be composed.
   ;;
@@ -305,7 +537,9 @@
          (a1+ (find-if (lambda (x) (and (char= #\+ (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s)))
          (a2+ (find-if (lambda (x) (and (char= #\+ (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p2-s)))
          (a1* (find-if (lambda (x) (and (char= #\* (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s)))
-         (a2* (find-if (lambda (x) (and (char= #\* (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p2-s))))
+         (a2* (find-if (lambda (x) (and (char= #\* (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p2-s)))
+         (bindings (append (previous-production-bindings (compilation-module-previous module)) 
+                           (production-compilation-instan (production-name p2)))))
     
     (case p1-index
       ((4 12 13 44)
@@ -315,17 +549,17 @@
                            (list a1=) 
                          (list a1*))) 
                      (cond ((and a1+ a2=)
-                            (awhen (buffer+-union a1+ a2=) 
+                            (awhen (buffer+-union a1+ a2= bindings) 
                                    (list it)))
                            ((and a1+ a2*)
-                            (awhen (buffer+-union a1+ a2*) 
+                            (awhen (buffer+-union a1+ a2* bindings) 
                                    (list it)))
                            (a1+
                             (list a1+))
                            (t 
                             nil)))))
       ((0 8)
-       (list (awhen (buffer-condition-union c1 c2 a1=) ;; a1= is always nil, though  so why use it?
+       (list (awhen (buffer-condition-union c1 c2 a1= bindings) ;; a1= is always nil, though  so why use it?
                     (list it))  
              (append (when a2= 
                        (list a2=)) 
@@ -334,17 +568,21 @@
                      (when a2+ 
                        (list a2+)))))
       ((9 40)
-       (list (awhen (buffer-condition-union c1 c2 (if a1= a1= a1*)) 
+       (list (awhen (buffer-condition-union c1 c2 (if a1= a1= a1*) bindings) 
                     (list it))
              (append 
-              (cond ((and a1* a2=)
-                     (awhen (buffer=-union a1* a2=)
+              (cond ((and (= p2-index 8) 
+                          (not (find buffer (compilation-module-no-harvest module))) ;; it is strict harvested
+                          (null (second a1=))) ;; the mod in a1 is a null mod
+                     nil)
+                    ((and a1* a2=)
+                     (awhen (buffer=-union a1* a2= bindings)
                             (list it)))
                     ((or a1= a2=) ;; if there's at least one = union those                             
-                     (awhen (buffer=-union a1= a2=) 
+                     (awhen (buffer=-union a1= a2= bindings) 
                             (list it)))
                     ((or a1* a2*) ;; if there's at least one * union those
-                     (awhen (buffer=-union a1* a2*) 
+                     (awhen (buffer=-union a1* a2* bindings) 
                             (list it)))
                     
                     (t nil))
@@ -415,6 +653,13 @@
   (declare (ignore p1 p1-s p1-index p2 p2-s p2-index))
   (find buffer (compilation-module-no-harvest module)))
 
+(defun NO-GOAL-HARVESTING-OR-NULL-MOD (buffer module p1 p1-s p1-index p2 p2-s p2-index)
+  (declare (ignore p1 p1-index p2 p2-s p2-index))
+  (or (find buffer (compilation-module-no-harvest module))
+      (let ((mod (find-if (lambda (x) (and (char= #\= (compose-rep-op x)) (eq buffer (compose-rep-name x)))) (second p1-s))))
+        (and mod (null (second mod))))))
+
+
 (defun G-B-C1 (buffer module p1 p1-s p1-index p2 p2-s p2-index)
   (and (no-rhs-goal-ref buffer module p1 p1-s p1-index p2 p2-s p2-index) 
        (no-goal-harvesting buffer module p1 p1-s p1-index p2 p2-s p2-index)))
@@ -463,7 +708,7 @@
                                (13 0 T) (12 40 NO-RHS-GOAL-REF)
                                (12 9 NO-RHS-GOAL-REF) (12 8 G-B-C1)
                                (12 0 T) (9 13 T) (9 12 T) (9 9 T)
-                               (9 8 NO-GOAL-HARVESTING) (9 4 T) (9 0 T)
+                               (9 8 NO-GOAL-HARVESTING-OR-NULL-MOD) (9 4 T) (9 0 T)
                                (8 44 NO-GOAL-HARVESTING)
                                (8 40 NO-GOAL-HARVESTING)
                                (8 13 NO-GOAL-HARVESTING)

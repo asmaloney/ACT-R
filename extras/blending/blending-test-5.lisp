@@ -115,7 +115,6 @@
   )
 
 #| Here's a trace of the run
-CG-USER(545): (run 1)
      0.000   PROCEDURAL             CONFLICT-RESOLUTION
      0.050   PROCEDURAL             PRODUCTION-FIRED P1
      0.050   PROCEDURAL             CLEAR-BUFFER BLENDING
@@ -215,13 +214,13 @@ Computing activation and latency for the blended chunk
 Activation for blended chunk is: 4.3135276
      0.050   PROCEDURAL             CONFLICT-RESOLUTION
      0.063   BLENDING               BLENDING-COMPLETE
-     0.063   BLENDING               SET-BUFFER-CHUNK BLENDING CHUNK0
+     0.063   BLENDING               SET-BUFFER-CHUNK-FROM-SPEC BLENDING 
      0.063   PROCEDURAL             CONFLICT-RESOLUTION
      0.113   PROCEDURAL             PRODUCTION-FIRED P2
 BLENDED VALUE IS 2.1176336 AND SIZE IS MEDIUM 
      0.113   PROCEDURAL             CLEAR-BUFFER BLENDING
      0.113   PROCEDURAL             CLEAR-BUFFER GOAL
-     0.113   GOAL                   SET-BUFFER-CHUNK GOAL CHUNK1
+     0.113   GOAL                   SET-BUFFER-CHUNK-FROM-SPEC GOAL 
      0.113   BLENDING               START-BLENDING
 Blending request for chunks with slots (VALUE) 
 Blending temperature is: 1.5
@@ -318,10 +317,10 @@ Computing activation and latency for the blended chunk
 Activation for blended chunk is: 5.029959
      0.113   PROCEDURAL             CONFLICT-RESOLUTION
      0.120   BLENDING               BLENDING-COMPLETE
-     0.120   BLENDING               SET-BUFFER-CHUNK BLENDING CHUNK2
+     0.120   BLENDING               SET-BUFFER-CHUNK-FROM-SPEC BLENDING 
      0.120   PROCEDURAL             CONFLICT-RESOLUTION
      0.120   ------                 Stopped because no events left to process
 0.12
-37
+33
 NIL
 |#

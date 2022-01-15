@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : blending.lisp
-;;; Version     : 4.3
+;;; Version     : 4.5
 ;;; 
 ;;; Description : Base module code to handle blended retrieval requests.
 ;;; 
@@ -222,6 +222,9 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.06.09 Dan [4.5]
+;;;             : * Don't need create-new-buffer-chunk because the spec can
+;;;             :   be sent directly.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -253,8 +256,6 @@
 ;;; Thus it is independent of the normal declarative module and it's possible to
 ;;; have both a retrieval request and a blending request active at the same time.
 ;;;
-;;; Using create-new-buffer-chunk from the goal-style module codebase to handle
-;;; the chunk creation/cleanup.
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -266,9 +267,6 @@
 #+(and :clean-actr (not :packaged-actr) :ALLEGRO-IDE) (in-package :cg-user)
 #-(or (not :clean-actr) :packaged-actr :ALLEGRO-IDE) (in-package :cl-user)
 
-;; To be safe since I'm using the goal-style code's create-buffer-chunk function
-
-(require-compiled "GOAL-STYLE-MODULE")
 
 (suppress-extension-warnings)
 (extend-chunks blended-activation :default-value nil)
@@ -904,7 +902,7 @@
   ;; using the goal-style module's function which handles
   ;; the scheduling and some extra cleanup.
   
-  (create-new-buffer-chunk 'blending chunk-list)
+  (schedule-set-buffer-chunk 'blending (define-chunk-spec-fct chunk-list) 0 :priority -1000 :module 'blending)
   (schedule-event-after-module 'blending 'call-blending-result-hooks :maintenance t :output nil :destination 'blending :module 'blending))
 
 
@@ -975,7 +973,7 @@
   
   ;; Have to have version and a doc strings
   
-  :version "4.4"
+  :version "4.5"
   :documentation "Module which adds a new buffer to do blended retrievals"
   
   ;; functions to handle the interfacing for the module

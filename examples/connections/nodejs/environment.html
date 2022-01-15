@@ -378,6 +378,33 @@
      }
    }       
 
+   function load_python_module() {
+     if (socket.io.opts.hostname == "127.0.0.1" || socket.io.opts.hostname == "localhost") {
+     
+       var input = document.createElement('input');
+       input.type = 'file';
+
+       load_results = "";
+
+       monitor_cmd("model-trace","monitor_loading");
+       monitor_cmd("command-trace","monitor_loading");
+       monitor_cmd("warning-trace","monitor_loading");
+       monitor_cmd("general-trace","monitor_loading");
+
+
+        input.onchange = e => { 
+         var file = e.target.files[0]; 
+         evaluate_cmd("load-python-module-html",null,[file.name],report_load_results);
+        }
+
+
+       input.click();
+
+     } else {
+       alert("Only local connections may import modules.");
+     }
+   }       
+
    </script>
 
 
@@ -1600,6 +1627,11 @@
                } else {
                  details.in_buffer = last_buffer.slice(1);
                }
+             } else {
+                if (s[o+m.length] == ">") {
+                  txt = m;
+                  index--;
+                }
              }
 
              tutor_values.push([m,(o < separator)]);
@@ -2398,6 +2430,7 @@
         <button type="button" onclick="load_model(true)">Load ACT-R Tutorial Model</button>
         <div> Unit <input type="number"  class="enter" value="1" id="load_unit" min="1" max="8"></div>
         <button type="button" onclick="load_model(false)">Load ACT-R Tutorial Experiment Code</button>
+        <button type="button" onclick="load_python_module()">Import Python Module</button>
       </div>
   
       <div class="button-section"> 

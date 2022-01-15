@@ -1,5 +1,24 @@
+; ACT-R tutorial unit6 building sticks experiment.
+; This experiment displays three posssible sticks
+; which can be used to create a given target stick's
+; length.  It is an isomorph of Luchins water jug
+; problem, and the experiment for the model is the
+; one from: 
+;
+; Lovett, M. C., & Anderson, J. R. (1996).  History of success 
+; and current context in problem solving: Combined influences
+; on operator selection.  Cognitive Psychology, 31, 168-217.
+;
+; The task is presented with buttons to pick the sticks
+; and a button to reset the current trial.
+
+
+; Load the corresponding ACT-R starting model.
 
 (load-act-r-model "ACT-R:tutorial;unit6;bst-model.lisp")
+
+; Global variables to hold the information about the
+; current trial information.
 
 (defvar *target*)
 (defvar *current-stick*)
@@ -9,6 +28,9 @@
 (defvar *window* nil)
 (defvar *visible* nil)
 
+; The data from the experiment, the lengths of the sticks
+; used in the experiment, and two example problems for 
+; demonstration.
 
 (defvar *bst-exp-data* '(20.0 67.0 20.0 47.0 87.0 20.0 80.0 93.0
                          83.0 13.0 29.0 27.0 80.0 73.0 53.0))
@@ -24,6 +46,10 @@
 
 (defvar *no-learn-stims* '((15  200  41 103)(10  200 29 132)))
 
+
+; build-display takes the lengths of the sticks for a trial.
+; It sets the global variables and draws the initial interface.
+
 (defun build-display (a b c goal)
   
   (setf *target* goal)
@@ -33,19 +59,41 @@
   (setf *current-line* nil)
   (setf *window* (open-exp-window "Building Sticks Task" :visible *visible* :width 600 :height 400))
   
+  ; Add buttons for the participant to press in the window.
+  ; The :action specifies a command to call and any parameters to pass it
+  ; when that button is pressed.  The others describe the details of how
+  ; the button is shown.
+  
   (add-button-to-exp-window *window* :text "A" :x 5 :y 23 :action (list "bst-button-pressed" a "under") :height 24 :width 40)
   (add-button-to-exp-window *window* :text "B" :x 5 :y 48 :action (list "bst-button-pressed" b "over") :height 24 :width 40)
   (add-button-to-exp-window *window* :text "C" :x 5 :y 73 :action (list "bst-button-pressed" c "under") :height 24 :width 40)
   (add-button-to-exp-window *window* :text "Reset" :x 5 :y 123 :action "bst-reset-button-pressed" :height 24 :width 65)
+  
+  ; Draw the lines for the choices and target.
   
   (add-line-to-exp-window *window* (list 75 35)  (list (+ a 75) 35) 'black)
   (add-line-to-exp-window *window* (list 75 60)  (list (+ b 75) 60) 'black)
   (add-line-to-exp-window *window* (list 75 85)  (list (+ c 75) 85) 'black)
   (add-line-to-exp-window *window* (list 75 110) (list (+ goal 75) 110) 'green))
 
+; button-pressed will be added as the bst-button-pressed command
+; for use as the action of the stick choice buttons.  It takes
+; a parameter to indicate the length of the stick and whether
+; the stick is associated with under or over shoot as a first
+; choice.   
+
 (defun button-pressed (len dir)
+  
+  ; If there is no choice recorded for this trial
+  ; set that to dir.
+  
   (unless *choice* 
     (setf *choice* dir))
+  
+  ; If the trial is not done then add or subtract
+  ; this stick from the target as appropriate and
+  ; call update-current-line to check its length
+  ; and redraw it.
   
   (unless *done*
     (if (> *current-stick* *target*)
@@ -53,6 +101,10 @@
       (incf *current-stick* len))
     (update-current-line)))
 
+; reset-display will be added as the bst-reseet-button-pressed 
+; command for use as the action of the reset buttons.  If the
+; trial is not over, then it sets the current stick length to 0
+; and redraws it.
 
 (defun reset-display ()
   (unless *done*
@@ -60,9 +112,20 @@
     (update-current-line)))
 
 
+; Add the commands for those two functions so they can be
+; used as button actions.
+
 (add-act-r-command "bst-button-pressed" 'button-pressed "Choice button action for the Building Sticks Task.  Do not call directly")
 (add-act-r-command "bst-reset-button-pressed" 'reset-display "Reset button action for the Building Sticks Task.  Do not call directly")
 
+; update-current-line compares the length of the current
+; stick to the target stick length.  If they match the
+; the trial is over, it redraws the current line, and 
+; displays the done prompt.  If it is zero it removes the
+; line from the display.  If there is a current line then
+; it is updated to match the current length, and if there
+; is not a current line then one is drawn and saved for
+; future modification.
 
 (defun update-current-line ()
   (cond ((= *current-stick* *target*)
@@ -78,16 +141,33 @@
         (t
          (setf *current-line* (add-line-to-exp-window *window* (list 75 135) (list (+ *current-stick* 75) 135) 'blue)))))
 
+; do-experiment takes a required parameter which is
+; a list of stick lengths and an optional parameter
+; which indicates whether a person is doing the task.
+; It draws the initial sticks and then waits for
+; a person to complete the task or runs the model
+; for up to a minute to do the task.
+
 (defun do-experiment (sticks &optional human)
   (apply 'build-display sticks)
   (if human
       (when (visible-virtuals-available?)
         (wait-for-human))
     (progn
+      
+      ; Make sure the model is interacting with
+      ; the current display and that it has its
+      ; right hand on the virtual mouse cursor.
+      
       (install-device *window*)
       (start-hand-at-mouse)
       (run 60 *visible*))))
 
+
+; wait-for-human takes no parameters. It waits for
+; a person to finish the task, and then waits one 
+; more second after the done prompt is displayed to
+; give the person a chance to read it.
 
 (defun wait-for-human ()
   (while (not *done*)
@@ -96,6 +176,18 @@
   (let ((start-time (get-time nil)))
     (while (< (- (get-time nil) start-time) 1000)
       (process-events))))
+
+; bst-set takes three required parameters and one optional
+; parameter.  The first parameter indicates whether it 
+; is a person or the model performing the task, and the
+; second indicates whether it should use a visible or
+; virtual window.  The third parameter is a list of 
+; stick lengths for the trials to present.  The optional
+; parameter indicates whether the model should learn from
+; trial to trial or be reset before each new trial.
+; It returns a list of strings indicating whether each
+; trial presented was started with the over-shoot or
+; under-shoot approach.
 
 (defun bst-set (human visible stims &optional (learn t))
   (setf *visible* visible)
@@ -106,6 +198,18 @@
       (do-experiment stim human)
       (push *choice* result))
     (reverse result)))
+
+; bst-test is used to run multiple instances of the 2 demo
+; problems.  It takes one required parameter which indicates
+; how many times to run that set of two items, and an optional
+; parameter to indicate if it should be a person or model
+; doing the task.  It returns a list with the counts of the
+; times over-shoot was tried on each of the problems.
+; When the model runs the task it is not learning, and starts
+; each trial as if it were the first time doing the task.
+; If the model is running once through the set then it will
+; use a visible window to show the interaction, otherwise it
+; will use a virtual window.
 
 (defun bst-test (n &optional human)
   (let ((stims *no-learn-stims*))
@@ -118,6 +222,18 @@
                                  (if (string-equal x "over") 1 0))
                          (bst-set human (or human (= n 1)) stims nil))))))))
 
+; bst-experiment is used to run the full experiment multiple
+; times and report the results and fit to the experiment data.
+; It has a required parameter which indicates how many times
+; to run the task, and an optional parameter indicating whether
+; it should be a person performing the task.
+; It collects the over- or under- shoot choices for each problem
+; and computes the proportion of time it's chosen for comparison
+; to the original data.  It displays the data and its fit to the
+; data from the original experiment along with the average utility
+; value over the trials for each of the four productions in the 
+; model which make the choice.
+
 (defun bst-experiment (n &optional human)
   (let ((stims *exp-stims*))
     
@@ -129,6 +245,9 @@
                        (mapcar (lambda (x) 
                                  (if (string-equal x "over") 1 0)) 
                          (bst-set human human stims))))
+        
+        ; Use no-output to suppress the output from the spp command
+        
         (no-output
          (setf p-values (mapcar (lambda (x) 
                                   (list (car x) (+ (second x) (production-u-value (car x)))))
@@ -149,6 +268,9 @@
       
       (dolist (x p-values)
         (format t "~12s: ~6,4f~%" (car x) (/ (second x) n))))))
+
+; production-u-value returns the current :u parameter
+; value from the indicated production. 
 
 (defun production-u-value (prod)
    (caar (spp-fct (list prod :u))))

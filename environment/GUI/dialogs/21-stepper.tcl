@@ -557,6 +557,11 @@ proc update_instantiation_viewers {list} {
             }
           }
           
+          if { $side == "rhs" && $is_buffer == 1 && [.stepper.prod_frame.f3.f.text search -exact ">" $word_end "$word_end +1 chars"] != ""} {
+
+          #do nothing for the RHS buffer modification actions
+
+          } else {
           set t_name [new_variable_name tag]
 
           .stepper.prod_frame.f3.f.text tag add $t_name $v_start $word_end
@@ -598,7 +603,9 @@ proc update_instantiation_viewers {list} {
                             -message "There was additional text selected when clicking on a variable.  Please try again." -type ok
             }
           }
+          }
           set strt $word_end
+          
         }
       }
       update_text_pane .stepper.prod_frame.f2.f.text $b

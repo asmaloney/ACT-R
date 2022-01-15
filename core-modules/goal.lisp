@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : goal.lisp
-;;; Version     : 2.2
+;;; Version     : 2.3
 ;;; 
 ;;; Description : Implementation of the goal module.
 ;;; 
@@ -131,6 +131,8 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.03.10 Dan [2.3]
+;;;             : * Set the :do-not-query parameter for goal buffer now.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -209,7 +211,9 @@
   (bt:with-lock-held ((goal-module-lock instance))
     (setf (goal-module-delayed instance) nil))
   ; Do NOT strict harvest the goal buffer by default
-  (sgp :do-not-harvest goal)
+  ; and don't add explicit queries when requests are made
+  (sgp :do-not-harvest goal :do-not-query goal)
+  
   )
 
 (defun goal-query (instance buffer-name slot value)
@@ -232,7 +236,7 @@
 
 (define-module-fct 'goal '((goal (:ga 0.0)))
   nil
-  :version "2.2"
+  :version "2.3"
   :documentation "The goal module creates new goals for the goal buffer"
   :creation 'create-goal-module
   :query 'goal-query

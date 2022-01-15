@@ -52,13 +52,16 @@
 ;;; 2019.08.27 Dan
 ;;;             : * Use new-symbol-fct instead of new-name-fct because it can be
 ;;;             :   used when there isn't a current model.
+;;; 2021.05.11 Dan
+;;;             : * Changed reference to GUI directory to gui to avoid issues
+;;;             :   with logical pathnames (particularlly in SBCL).
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
 ;;; 
 ;;; Create a new virtual dialog item called an image which can be used to draw
 ;;; .gif files in the visible virtual windows if those images are located in the
-;;; GUI/AGI-images directory of the Environment.
+;;; gui/AGI-images directory of the Environment.
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -74,7 +77,7 @@
 ;;;
 ;;; Win is the window reference (as with other AGI items), text is a string which
 ;;; will be the value the model sees for attending the item.  File should be the
-;;; name of a file in the GUI/AGI-images directory of the Environment to display
+;;; name of a file in the gui/AGI-images directory of the Environment to display
 ;;; in the visible virtual window.  X and y are the coordinates for the upper left
 ;;; corner of the image in the window.  Width and height specify the size of the
 ;;; image for display purposes and the .gif file will be clipped to fit if 

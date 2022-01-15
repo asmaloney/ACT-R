@@ -49,6 +49,10 @@
 ;;;             :   being a chunk in the buffer and a query that it's empty.
 ;;; 2020.11.10 Dan
 ;;;             : * Fixed the typo of modfication in the failure strings.
+;;; 2021.02.17 Dan
+;;;             : * Updated the calls to buffer-condition-union since that needs
+;;;             :   a 4th parameter of bindings that may be needed deal with
+;;;             :   dynamic issues (not needed for perceptual).
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -108,7 +112,7 @@
                (list a1+))))
       (8
        (list (append 
-              (awhen (buffer-condition-union c1 c2 nil) 
+              (awhen (buffer-condition-union c1 c2 nil nil) 
                      (list it)) 
               (if q2 
                     (if (find buffer (compilation-module-no-harvest module))
@@ -124,7 +128,7 @@
                (list a2+))))
       ((16 24)
        (list (append 
-              (awhen (buffer-condition-union c1 c2 nil) 
+              (awhen (buffer-condition-union c1 c2 nil nil) 
                      (list it)) 
               (when q1 
                 (list q1)))
