@@ -2,11 +2,15 @@
 
 # ACT-R
 
-This is a mirror of the official ACT-R distribution found [here](https://act-r.psy.cmu.edu/software/).
+This is a mirror of the official ACT-R distribution found [here](http://act-r.psy.cmu.edu/software/).
 
-The only differences are this README file and I copied the license to [LICENSE.txt](LICENSE.txt) so GitHub would pick it up.
+I created this mirror so that I could provide smaller ACT-R packages for use with my **[gactar project](https://github.com/asmaloney/gactar)**.
+
+The only changes I made are this README file and I copied the license to [LICENSE.txt](LICENSE.txt) so GitHub would pick it up.
 
 Releases are tagged with their version number.
+
+If you have issues with ACT-R itself, please [contact the ACT-R people](http://act-r.psy.cmu.edu/software/).
 
 ## License
 
