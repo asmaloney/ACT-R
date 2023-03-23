@@ -89,7 +89,7 @@ proc switch_buffer_view {b1 b2 var state lb tb m} {
 
 proc update_buffers_list {list text_box model var} {
 
-  set buffers [lindex [call_act_r_command "buffers" $model [list 1]] 0]
+  set buffers [lindex [call_act_r_command "model-buffers" $model [list 1]] 0]
 
   global options_array
 

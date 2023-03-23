@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    : bold.lisp
-;;; Version     : 4.2
+;;; Version     : 4.3
 ;;;
 ;;; Description : Computes predictions of the BOLD response based on activity
 ;;;               of the buffers in a module.
@@ -324,6 +324,9 @@
 ;;; 2020.04.21 Dan
 ;;;             : * Switched to using list-of-buffers-p for the point-predict
 ;;;             :   parameter test.
+;;; 2022.03.10 Dan [4.2]
+;;;             : * Have the module require buffer-trace to be safe with the
+;;;             :   use-modules mechanism without having to specify both.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -956,8 +959,9 @@
   :creation 'create-bold-module
   :reset 'reset-bold-module
   :params 'handle-bold-params
-  :version "4.2"
-  :documentation "A module to produce BOLD response predictions from buffer request activity.")
+  :version "4.3"
+  :documentation "A module to produce BOLD response predictions from buffer request activity."
+  :requires '(buffer-trace))
 
 
 (define-history-processor "buffer-trace" "bold-prediction" predict-bold-response-processor)

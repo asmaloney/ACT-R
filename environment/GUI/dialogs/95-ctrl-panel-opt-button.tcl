@@ -93,6 +93,12 @@ proc select_options {} {
                 -variable current_options(sort_lists) \
                 -onvalue 1 -offvalue 0
 
+    checkbutton .options.edit_warn \
+                -text "Show message about editor when using Open File and New File" \
+                -font checkbox_font \
+                -variable current_options(edit_warn) \
+                -onvalue 1 -offvalue 0
+
     pack .options.use_env_window -anchor w -expand 1 -fill x
     pack .options.use_smart_load -anchor w -expand 1 -fill x
     pack .options.save_before_reload -anchor w -expand 1 -fill x
@@ -102,6 +108,7 @@ proc select_options {} {
     pack .options.update_when_stepped -anchor w -expand 1 -fill x
     pack .options.use_localhost -anchor w -expand 1 -fill x
     pack .options.sort -anchor w -expand 1 -fill x
+    pack .options.edit_warn -anchor w -expand 1 -fill x
 
     pack .options.but_frame
     wm deiconify .options

@@ -13,6 +13,15 @@ respectively to do the task.
 
 (load-act-r-model "ACT-R:examples;vision-module;tracking-model.lisp")
 
+(defvar *y*)
+(defvar *x*)
+
+(defun update-agi-feature (f)
+  (modify-text-for-exp-window f :y (incf *y* 10)))
+
+(defun update-arbitrary-feature (f)
+  (modify-visicon-features (list f 'screen-x (incf *x* 10))))
+
 (defun agi-tracking () 
   
   (reset)
@@ -20,16 +29,15 @@ respectively to do the task.
   ;; open a window and add the text
   
   (let* ((window (open-exp-window "Moving X" :visible t))
-         (text (add-text-to-exp-window window "x" :x 10 :y 10))
-         (y 10))
+         (text (add-text-to-exp-window window "x" :x 10 :y 10)))
     
+    (setf *y* 10)
     
     (install-device window)
     
     ;; schedule an event to move it
     
-    (schedule-periodic-event .5 (lambda () 
-                                  (modify-text-for-exp-window text :y (incf y 10)))
+    (schedule-periodic-event .5 'update-agi-feature :params (list text)
                              :maintenance t
                              :details "moving object"
                              :initial-delay 1.0)
@@ -45,13 +53,13 @@ respectively to do the task.
   
   ;; First create the visual-location chunk
   
-  (let ((feature (first (add-visicon-features '(screen-x 15 screen-y 20 value "x"))))
-        (x 15))
+  (let ((feature (first (add-visicon-features '(screen-x 15 screen-y 20 value "x")))))
+    
+    (setf *x* 15)
     
     ;; schedule an event to move the item
     
-    (schedule-periodic-event .5 (lambda () 
-                                  (modify-visicon-features (list feature 'screen-x (incf x 10))))
+    (schedule-periodic-event .5 'update-arbitrary-feature :params (list feature)
                              :maintenance t
                              :details "moving object"
                              :initial-delay 1.0)

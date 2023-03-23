@@ -81,9 +81,9 @@
 
 (defvar *actr-architecture-version* "7")
 (defvar *actr-major-version-string* "27")
-(defvar *actr-minor-version-string* nil)
-(defvar *actr-repository-number* "3193")
-(defvar *actr-release-tag* "2021-09-15")
+(defvar *actr-minor-version-string* "7")
+(defvar *actr-repository-number* "3260")
+(defvar *actr-release-tag* "2022-07-19")
 
 (defvar *actr-version-string* (format nil "~a.~a~@[.~a~]-<~@[~a:~]~a>"
                                 *actr-architecture-version*

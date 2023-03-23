@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : vision.lisp
-;;; Version     : 10.0
+;;; Version     : 10.1
 ;;; 
 ;;; Description : Source code for the ACT-R Vision Module.  
 ;;;
@@ -1192,6 +1192,26 @@
 ;;;             :   with respect to the visual buffer not always having a new 
 ;;;             :   chunk name -- compare the chunk-visicon-entry of the chunk 
 ;;;             :   in the buffer to tracked-obj.
+;;; 2021.09.23 Dan [10.1]
+;;;             : * Added the parameter :force-visual-commands which if set to
+;;;             :   t makes the add/delete/modify-visicon-features and the
+;;;             :   proc-display actions always happen through a command that
+;;;             :   can be monitored.  
+;;; 2021.10.07 Dan
+;;;             : * Since proc-display is passed the vision-module that's a 
+;;;             :   problem for remote monitoring with :force-visual-commands
+;;;             :   because the vision-module can't be comverted to JSON.
+;;;             :   Changed proc-display so it is optionally passed the module
+;;;             :   and don't pass it when using the command.
+;;; 2022.02.01 Dan
+;;;             : * To avoid potential problems with people calling proc-display
+;;;             :   directly just have that function print a warning and use a
+;;;             :   different function name internally but still show the 
+;;;             :   details as proc-display.
+;;; 2022.03.29 Dan
+;;;             : * The encoding-hook slot of the module object not having an
+;;;             :   initial value can be a problem when using EMMA since there's
+;;;             :   a potential ordering issue with parameter initialization.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 
@@ -1246,9 +1266,10 @@
    (feature-to-object :accessor feature-to-object :initform nil)
    (show-focus-p :accessor show-focus-p :initform nil)
    (visicon-updated :accessor visicon-updated :initform nil)
-   (encoding-hook :accessor encoding-hook)
+   (encoding-hook :accessor encoding-hook :initform nil)
    (last-attention-params :accessor last-attention-params :initform nil)
    (default-width :accessor default-width :initform nil)
+   (force-commands :accessor force-commands :initform nil)
    
    (marker-lock :accessor marker-lock :initform (bt:make-recursive-lock "visual-markers")) ;; clof, current-marker, currently-attended, last-obj, tracked-*, failure slots, and scene-change
    (text-parse-lock :accessor text-parse-lock :initform (bt:make-lock "visual-text-parse")) ;; other-word-chars
@@ -1257,7 +1278,7 @@
    )
   (:default-initargs
       :name :VISION
-    :version-string "10.0"))
+    :version-string "10.1"))
 
 
 (defun visual-location-slots (chunk vis-m)
@@ -1467,16 +1488,27 @@
       (decf (proc-display-locks vis-mod)))
     
     (when (and (zerop (proc-display-locks vis-mod)) (blocked-proc-display vis-mod))
-      (proc-display vis-mod))))
+      (internal-proc-display vis-mod))))
 
 
 (defmethod schedule-proc-display ((vis-mod vision-module))
   (bt:with-recursive-lock-held ((proc-display-lock vis-mod))
     (unless (scheduled-proc-display vis-mod)
       (setf (scheduled-proc-display vis-mod) 
-        (schedule-event-now 'proc-display :module :vision :destination :vision :priority -100 :output 'high :maintenance t)))))
+        (bt:with-recursive-lock-held ((param-lock vis-mod))
+          (if (force-commands vis-mod)
+              (schedule-event-now "proc-display" :module :vision :priority -100 :output 'high :maintenance t)
+          
+          (schedule-event-now 'internal-proc-display :module :vision :destination :vision :priority -100 :output 'high :details "proc-display" :maintenance t)))))))
 
-(defmethod proc-display ((vis-mod vision-module))
+(defun proc-display (&rest r)
+  (declare (ignore r))
+  (print-warning "Proc-display should not be called directly, and doing so has no effect."))
+
+(defun internal-proc-display (&optional vis-mod)
+  (unless vis-mod
+    (setf vis-mod (get-module :vision)))
+  
   (bt:with-recursive-lock-held ((proc-display-lock vis-mod))
     (cond ((zerop (proc-display-locks vis-mod))
            (setf (scheduled-proc-display vis-mod) nil)
@@ -1485,6 +1517,7 @@
           (t
            (setf (blocked-proc-display vis-mod) t)))))
 
+(add-act-r-command "proc-display" 'internal-proc-display "Internal vision module command for processing visual display -- do not call directly.")
 
 (defun visicon-less-than (c1 xyz-c1 c2 xyz-c2)
   (or (< (px xyz-c1) (px xyz-c2))
@@ -3282,7 +3315,9 @@ Whenever there's a change to the display the buffers will be updated as follows:
           (:show-focus
            (setf (show-focus-p vis-mod) (cdr param)))
           (:default-target-width
-           (setf (default-width vis-mod) (cdr param))))
+           (setf (default-width vis-mod) (cdr param)))
+          (:force-visual-commands
+           (setf (force-commands vis-mod) (cdr param))))
       (case param
         (:visual-encoding-hook
          (encoding-hook vis-mod))
@@ -3310,7 +3345,9 @@ Whenever there's a change to the display the buffers will be updated as follows:
            (unstuff-loc vis-mod)))
         (:overstuff-visual-location (overstuff-loc vis-mod))
         (:tracking-clear (tracking-clear vis-mod))
-        (:show-focus (show-focus-p vis-mod))))))
+        (:show-focus (show-focus-p vis-mod))
+        (:force-visual-commands
+         (force-commands vis-mod))))))
 
 
 (defun visual-location-status ()
@@ -3341,70 +3378,70 @@ Whenever there's a change to the display the buffers will be updated as follows:
             :status-fn 'visual-buffer-status))
   (list 
    (define-parameter :scene-change-threshold
-       :valid-test 'scene-change-value-test 
+     :valid-test 'scene-change-value-test 
      :default-value 0.25
      :warning "a number in the range [0.0,1.0]"
      :documentation "Proportion of visicon which must change to signal a scene change")
    (define-parameter :optimize-visual
-       :valid-test 'tornil 
+     :valid-test 'tornil 
      :default-value T
      :warning "T or NIL"
      :documentation "If set to nil the default devices process text into sub-letter features")
    (define-parameter :visual-attention-latency
-       :valid-test 'nonneg 
+     :valid-test 'nonneg 
      :default-value 0.085
      :warning "a non-negative number"
      :documentation "Time for a shift of visual attention")
    (define-parameter :visual-finst-span
-       :valid-test 'nonneg 
+     :valid-test 'nonneg 
      :default-value 3.0
      :warning "a non-negative number"
      :documentation "Lifespan of a visual finst")
    (define-parameter :visual-movement-tolerance
-       :valid-test 'nonneg 
+     :valid-test 'nonneg 
      :default-value 0.5
      :warning "a non-negative number"
      :documentation 
      "How far something can move while still being seen as the same object.")
    (define-parameter :visual-num-finsts
-       :valid-test 'posnum 
+     :valid-test 'posnum 
      :default-value 4
      :warning "a positive number"
      :documentation "Number of visual finsts.")
    (define-parameter :visual-onset-span
-       :valid-test 'nonneg 
+     :valid-test 'nonneg 
      :default-value 0.5
      :warning "a non-negative number"
      :documentation "Lifespan of new visual objects being marked as NEW")
    (define-parameter :auto-attend
-       :valid-test 'tornil 
+     :valid-test 'tornil 
      :default-value nil
      :warning "T or NIL"
      :documentation "Whether visual-location requests automatically generate an attention shift")
    
    (define-parameter :visual-encoding-hook
-       :valid-test 'local-or-remote-function-or-nil 
+     :valid-test 'local-or-remote-function-or-nil 
      :default-value nil
      :warning "Local or remote function or NIL"
      :documentation "User hook for overriding the encoding time of an attention shift")
    
    (define-parameter :delete-visicon-chunks
-       :valid-test 'tornil 
+     :valid-test 'tornil 
      :default-value T
      :warning "T or NIL"
      :documentation "Whether proc-display should delete and unintern the name of old chunks that were in the visicon")
    (define-parameter :unstuff-visual-location
-       :valid-test 'numorbool 
+     :valid-test 'numorbool 
      :default-value t
      :warning "T, NIL, or a number"
      :documentation "Whether chunks stuffed into the visual-location buffer should be automatically cleared by the module if unused")
    (define-parameter :overstuff-visual-location
-       :valid-test 'tornil
+     :valid-test 'tornil
      :default-value nil
      :warning "T or NIL"
      :documentation "Whether a chunk previously stuffed into the visual-location buffer can be overwritten by a new chunk to be stuffed")
    (define-parameter :tracking-clear
-       :valid-test 'tornil
+     :valid-test 'tornil
      :default-value t
      :warning "T or NIL"
      :documentation "Whether a tracking failure clears the currently attended location")
@@ -3413,6 +3450,12 @@ Whenever there's a change to the display the buffers will be updated as follows:
      :default-value nil
      :warning "T, NIL, a symbol, or string"
      :documentation "Show the focus ring on the GUI?  T, a string, or symbol will enable, and some devices will use the value to indicate a color.")
+   (define-parameter :force-visual-commands
+     :valid-test 'tornil
+     :default-value nil
+     :warning "T or NIL"
+     :documentation "Whether proc-display and all [add|delete|modify]-visicon-features calls are always called as a command")
+   
    (define-parameter :viewing-distance :owner nil)
    (define-parameter :pixels-per-inch :owner nil)
    (define-parameter :default-target-width :owner nil))
@@ -3639,8 +3682,15 @@ Whenever there's a change to the display the buffers will be updated as follows:
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defun add-visicon-features (&rest feats)
-  (let ((results nil)
-        (vis-mod (get-module :vision)))
+  (let ((vis-mod (get-module :vision)))
+    (when vis-mod
+      (bt:with-recursive-lock-held ((param-lock vis-mod))
+        (if (force-commands vis-mod)
+            (dispatch-apply-list-names "add-visicon-features" (encode-string-names feats))
+          (apply 'internal-add-visicon-features (cons vis-mod feats)))))))
+
+(defun internal-add-visicon-features (vis-mod &rest feats)
+  (let ((results nil))
     (when vis-mod
       (let ((vis-loc-slots (bt:with-lock-held ((vis-loc-lock vis-mod)) (vis-loc-slots vis-mod)))
             (view-dist (bt:with-recursive-lock-held ((param-lock vis-mod)) (view-dist vis-mod))))
@@ -3792,14 +3842,20 @@ Whenever there's a change to the display the buffers will be updated as follows:
     results))
 
 (defun external-add-visicon-features (&rest feats)
-  (apply 'add-visicon-features (decode-string-names feats)))
+  (apply 'internal-add-visicon-features (cons (get-module :vision) (decode-string-names feats))))
 
 (add-act-r-command "add-visicon-features" 'external-add-visicon-features "Add visual features to the current model's visicon. Params: 'feature-spec'*.")
 
-
 (defun delete-visicon-features (&rest feats)
-  (let ((results nil)
-        (mod (get-module :vision)))
+  (let ((vis-mod (get-module :vision)))
+    (when vis-mod
+      (bt:with-recursive-lock-held ((param-lock vis-mod))
+        (if (force-commands vis-mod)
+            (dispatch-apply-list-names "delete-visicon-features" (encode-string-names feats))
+          (apply 'internal-delete-visicon-features (cons vis-mod feats)))))))
+
+(defun internal-delete-visicon-features (mod &rest feats)
+  (let ((results nil))
     (when mod
       (flet ((invalid-feature (bad)
                               (model-warning "Feature ~s is not a valid feature name and cannot be removed." bad)
@@ -3834,7 +3890,7 @@ Whenever there's a change to the display the buffers will be updated as follows:
     results))
 
 (defun external-delete-visicon-features (&rest feats)
-  (apply 'delete-visicon-features (string->name-recursive feats)))
+  (apply 'internal-delete-visicon-features (cons (get-module :vision) (string->name-recursive feats))))
 
 (add-act-r-command "delete-visicon-features" 'external-delete-visicon-features "Remove visual features from the current model's visicon. Params: feature-name*.")
 
@@ -3842,20 +3898,34 @@ Whenever there's a change to the display the buffers will be updated as follows:
 (defun delete-all-visicon-features ()
   (let ((mod (get-module :vision)))
     (when mod
-      (bt:with-recursive-lock-held ((visicon-lock mod))
-        (push-last (cons :delete-all nil) (visicon-updates mod)))
-      (schedule-proc-display mod)
-      t)))
+      (bt:with-recursive-lock-held ((param-lock mod))
+        (if (force-commands mod)
+            (dispatch-apply "delete-all-visicon-features")
+          (internal-delete-all-visicon-features mod))))))
+      
+(defun internal-delete-all-visicon-features (mod)
+  (when mod
+    (bt:with-recursive-lock-held ((visicon-lock mod))
+      (push-last (cons :delete-all nil) (visicon-updates mod)))
+    (schedule-proc-display mod)
+    t))
 
-
-(add-act-r-command "delete-all-visicon-features" 'delete-all-visicon-features "Remove all visual features from the current model's visicon. No params.")
-
-
+(defun external-delete-all-visicon-features ()
+  (internal-delete-all-visicon-features (get-module :vision)))
+  
+(add-act-r-command "delete-all-visicon-features" 'external-delete-all-visicon-features "Remove all visual features from the current model's visicon. No params.")
 
 (defun modify-visicon-features (&rest feats)
+  (let ((vis-mod (get-module :vision)))
+    (when vis-mod
+      (bt:with-recursive-lock-held ((param-lock vis-mod))
+        (if (force-commands vis-mod)
+            (dispatch-apply-list-names "modify-visicon-features" (encode-string-names feats))
+          (apply 'internal-modify-visicon-features (cons vis-mod feats)))))))
+
+(defun internal-modify-visicon-features (mod &rest feats)
   (let ((results nil)
-        (updates nil)
-        (mod (get-module :vision)))
+        (updates nil))
     (when mod
       (flet ((invalid-feature (bad)
                               (model-warning "Provided update ~s does not contain a valid visual feature modification." bad)
@@ -3907,7 +3977,7 @@ Whenever there's a change to the display the buffers will be updated as follows:
 
 
 (defun external-modify-visicon-features (&rest feats)
-  (apply 'modify-visicon-features (decode-string-names feats)))
+  (apply 'internal-modify-visicon-features (cons (get-module :vision) (decode-string-names feats))))
 
 (add-act-r-command "modify-visicon-features" 'external-modify-visicon-features "Change a visual feature in the current model's visicon. Params: 'visicon-mod-spec'*.")
 

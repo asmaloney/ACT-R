@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : printing.lisp
-;;; Version     : 1.4
+;;; Version     : 2.0
 ;;; 
 ;;; Description : Module that provides model output control.
 ;;; 
@@ -192,6 +192,8 @@
 ;;;             :   because they used separate streams and thus were both
 ;;;             :   writing to different positions in the file.  Now, if they're
 ;;;             :   set to a file/pathname it uses one stream for both.
+;;; 2021.10.19 Dan [2.0]
+;;;             : * Set the required flag on the module.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -382,12 +384,13 @@
      :warning "must be t or nil"
      :valid-test 'tornil)
    )
-  :version "1.4"
+  :version "2.0"
   :documentation "Coordinates output of the model."
   :creation 'create-printing-module
   :reset 'reset-printing-module
   :delete 'delete-printing-module
-  :params 'printing-module-param)
+  :params 'printing-module-param
+  :required t)
 
 (defun filter-output-events (event)
   (with-model-eval (if (act-r-event-model event) (act-r-model-name (act-r-event-model event)) (first (mp-models))) ;; just use the first if there isn't one (a break event)

@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : central-parameters.lisp
-;;; Version     : 1.3
+;;; Version     : 2.0
 ;;; 
 ;;; Description : A module to hold parameters that could be used by more than
 ;;;               one module.
@@ -65,6 +65,8 @@
 ;;; 2020.01.10 Dan [1.3]
 ;;;             : * Removed the #' and lambdas from the module interface functions
 ;;;             :   since that's not allowed in the general system now.
+;;; 2021.10.19 Dan [2.0]
+;;;             : * Set the :required flag on the module.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -190,11 +192,12 @@
    (define-parameter :ol :owner t :valid-test 'posnumorbool 
      :default-value t :warning "either t, nil, or a positive number"
      :documentation "Optimized Learning"))
-  :version "1.3"
+  :version "2.0"
   :documentation "a module that maintains parameters used by other modules"
   :creation 'create-central-params
   :params 'central-parameters-params
-  :reset (list nil 'central-parameters-reset))
+  :reset (list nil 'central-parameters-reset)
+  :required t)
 
 
 (provide "CENTRAL-PARAMETERS")

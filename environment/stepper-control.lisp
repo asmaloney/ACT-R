@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : stepper-control.lisp
-;;; Version     : 6.2
+;;; Version     : 7.0
 ;;; 
 ;;; Description : No system dependent code.
 ;;;             : This file contains the Lisp to support the stepper window.
@@ -178,6 +178,29 @@
 ;;;             :   when the production was selected and thus there's no info
 ;;;             :   recorded.  In that case it will just print the name in the
 ;;;             :   list, but none of the details.
+;;; 2021.11.01 Dan [7.0]
+;;;             : * Allow for other tutoring possibilities.  The update function
+;;;             :   is passed the name of the tutored event if it is one instead
+;;;             :   of just t as was the case before when there was only one 
+;;;             :   possible tutoring event.
+;;;             : * If "update-stepper" is passed nil then it returns one item  
+;;;             :   which is any additional information recorded for tutoring
+;;;             :   purposes at the time of the event.
+;;;             : * Now saves the production conditions text and whynot info 
+;;;             :   for conflict-resolution tutoring and the printed DM chunk 
+;;;             :   info for start-retrieval (the retrieval request is already
+;;;             :   saved for display purposes).  When asked for the tutor data
+;;;             :   c-r sends a list of two element lists where the first item
+;;;             :   in a list is a production's condition text and the second
+;;;             :   is the whynot reason for that production or an empty string
+;;;             :   if it does match, and s-r sends a list of two items where 
+;;;             :   the first item is the text of the retrieval request and the
+;;;             :   second is a list of two element lists for each chunk in DM
+;;;             :   with the first item being the printed chunk string and the
+;;;             :   second being t if the chunk matches and nil if it does not.
+;;; 2021.11.05 Dan
+;;;             : * Always step on start-retrieval and conflict-resolution when
+;;;             :   tutoring is enabled, just like production-selected.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -209,9 +232,9 @@
 ;;;                  items - a list of items for which there may be additional
 ;;;                          details available (currently retrieved chunks and
 ;;;                          selected or fired productions)
-;;;                  tutorable - a boolean indicating whether or not this is a
-;;;                              production-selected event which may include 
-;;;                              additional details
+;;;                  tutorable - a generalized boolean indicating whether or not
+;;;                              this is a tutorable item with a true value 
+;;;                              indicating the event type
 ;;;                  item-label - a string naming the type of items provided
 ;;;                  features-1 - a string indicating the information provided
 ;;;                               in the first value of an update
@@ -288,8 +311,11 @@
 ;;;  This command provides additional details for the items given to the update
 ;;;  command provided when the stepper was started.  It requires one parameter
 ;;;  which should be one of the items in the list passed to the update command.
-;;;  It returns four values.  The first two are strings with information for
-;;;  the item corresponding to the first two labels provided to the update.  
+;;;  
+;;;  If it is passed an item from the list (which is either a chunk name or
+;;;  production name since those are the only lists provided at this time),
+;;;  then it returns four values.  The first two are strings with information 
+;;;  for that item corresponding to the first two labels provided to the update.  
 ;;;  Currently, for production items those are the parameters and variable 
 ;;;  bindings, and for chunk items they are the chunk parameters and the 
 ;;;  retrieval request.  The third item provides a string for the third label.
@@ -305,6 +331,9 @@
 ;;;  is a string it will have a set of single quote characters around it) and
 ;;;  the third is a boolean indicating whether or not the variable is the name
 ;;;  of a buffer in the production.
+;;;  
+;;;  If it is passed a value of nil then it will return one value which is 
+;;;  any additional tutoring information for the current situation.
 ;;;
 ;;; "set-stepper-tutoring"
 ;;;  
@@ -322,8 +351,8 @@
 ;;;  all events (regardless of their output mode) or not.  It requires two 
 ;;;  parameters.  The first is the id of the stepper and the second is a boolean
 ;;;  indicating whether the stepper should step all events or not.  If the id is
-;;;  valid then the tutoring mode is set as indicated and t is returned, otherwise
-;;;  it returns nil.
+;;;  valid then the stepping mode is set as indicated and t is returned, 
+;;;  otherwise it returns nil.
 ;;;
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
@@ -368,7 +397,7 @@
     (setf (stepper-control-open stepper) nil)))
 
 (define-component-fct :stepper 
-  :version "6.2"   
+  :version "7.0"   
   :documentation "Stepper interface global information"
   :creation (lambda () *stepper*)
   :clear-all 'stepper-cleared)
@@ -410,7 +439,7 @@
 (define-module stepper nil nil 
   :creation create-stepper-module 
   :reset (nil reset-stepper-module) 
-  :version 6.2 
+  :version 7.0 
   :documentation "Store the model specific information for the stepper interface.")
 
 
@@ -602,7 +631,11 @@
                     (and (event-displayed-p event)
                          (model-trace-enabled event))
                     (and tutor
-                         (eq (evt-action event) 'production-selected))))))
+                         (or 
+                          (eq (evt-action event) 'production-selected)
+                          (eq (evt-action event) 'conflict-resolution)
+                          (eq (evt-action event) 'start-retrieval))
+                         )))))
       
         (progn
           (bt:with-recursive-lock-held ((stepper-control-lock *stepper*))
@@ -688,7 +721,7 @@
                                                 ;; get production named in the event
                                                 (list (production-name (first (evt-params event)))))
                                             (stepper-module-cs (get-module stepper))))
-                                        (if (eq (evt-action event) 'production-selected) t nil)
+                                        (if (eq (evt-action event) 'production-selected) 'production-selected nil)
                                         "Possible Productions" "Production Parameters" "Bindings" "Production"))
                                  ((or (eq (evt-action event) 'retrieved-chunk)
                                       (eq (evt-action event) 'retrieval-failure))
@@ -696,6 +729,10 @@
                                           (stepper-module-rs (get-module stepper)))
                                         nil
                                         "Possible Chunks" "Chunk Parameters" "Retrieval Request" "Chunk"))
+                                 ((eq (evt-action event) 'conflict-resolution)
+                                  (list nil 'conflict-resolution "" "" "" ""))
+                                 ((eq (evt-action event) 'start-retrieval)
+                                  (list nil 'start-retrieval "" "" "" ""))
                                  (t
                                   (list nil nil "" "" "" ""))))
           (saved-details (cond ((or (eq (evt-action event) 'production-selected)
@@ -745,6 +782,41 @@
                                              (printed-chunk c)
                                              nil))
                                     (stepper-module-rs (get-module stepper))))))
+                               ((eq (evt-action event) 'conflict-resolution)
+                                (with-model-eval (evt-model event)
+                                  (mapcar (lambda (x)
+                                            (list (printed-production-side x t)
+                                                  (let ((w (whynot-text x)))
+                                                    (aif (search "It fails because:" w)
+                                                         (let ((ws (list #\return #\space #\newline)))
+                                                           (string-right-trim ws (string-left-trim ws (subseq w (+ it 17)))))
+                                                         ""))))
+                                    (let ((seed (get-parameter-value :seed)))
+                                      (prog1
+                                          (permute-list (all-productions))
+                                        (set-parameter-value :seed seed))))))
+                               ((eq (evt-action event) 'start-retrieval)
+                                (with-model-eval (evt-model event)
+                                  
+                                  (let* ((s (get-module stepper))
+                                         (request-text
+                                          (if (stepper-module-rr s) 
+                                              (format nil "+retrieval>~%~a" (stepper-module-rr s)) 
+                                            ""))
+                                         (request-spec (read-from-string (format nil "(~a)" (stepper-module-rr s))))
+                                         (matching (no-output (sdm-fct request-spec)))
+                                         )
+                                    
+                                    (list request-text
+                                          (mapcar (lambda (c)
+                                                    (list 
+                                                     (let ((ws (list #\return #\newline))
+                                                           (name (symbol-name c)))
+                                                       (string-right-trim 
+                                                        ws (string-left-trim 
+                                                            ws (subseq (printed-chunk c) (length name)))))
+                                                     (when (find c matching) t)))
+                                            (no-output (dm)))))))
                                (t (list "" "" "" nil)))))
                                   
       
@@ -788,7 +860,8 @@
                     (t
                      (values "" "" "" nil))))
           (values "" "" "" nil)))
-        (values "" "" "" nil)))
+    
+    (fourth (stepper-control-stepped-event-details *stepper*))))
 
 (add-act-r-command "update-stepper" 'update-stepper-info "Stepper interface command for getting the detailed information. Returns: strings for the three information panels for the given item. Params: seleted-item")
 

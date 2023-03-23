@@ -122,6 +122,26 @@ the x coordinate and the second the y coordinate of the location, but if there
 is a problem (no current model or EMMA is not enabled) it will return nil.
 
 
-The module will also generate a signal named "current-eye-location" when the
-eye position changes which will be passed two parameters indicating the new
-x and y coordinates respectively.
+Movement signal that can be monitored:
+
+The module will also generate a signal named "new-eye-location" when the
+eye position changes which will be passed three parameters indicating the new
+x, y, z coordinates respectively.
+
+History stream:
+
+There is a history stream that can be recorded called "emma-fixations" and
+the data it reports is a list of three element lists.  The first element is
+the time in ms of the start of a fixation (when the eye stoped moving). The
+second element is the time in ms when a saccade to move from that fixation
+starts (determined by the end of preparation/start of initiation).  The third
+element is a list of the x, y, and z position of the eye for the fixation.
+The list is in order by time of fixation with the first list being the fixation
+that was ongoing when the data recording started and the last is for the
+current fixation, which will have a second value of -1 if it is "ongoing" i.e.
+no saccade has started to end it.  
+
+If recording is stopped the last fixation will have an end time set as the
+current time when it is stopped, and if it is started again there will be 
+a new entry added even if the eye position is at the same point it was when
+it was stopped.

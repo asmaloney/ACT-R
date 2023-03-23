@@ -9,6 +9,7 @@ global stepper_tutored
 
 global current_stepper_id
 
+global tutor_selections
 
 frame [control_panel_name].step_frame -borderwidth 0 
 
@@ -330,6 +331,14 @@ proc select_tutor_mode {} {
     destroy .tutor_response
   }
 
+  if {[winfo exists .tutor_cr] == 1} {
+    destroy .tutor_cr
+  }
+
+  if {[winfo exists .tutor_r] == 1} {
+    destroy .tutor_r
+  }
+
   if [array exists tutor_bindings] {
     array unset tutor_bindings 
   }  
@@ -374,6 +383,7 @@ proc display_stepper_stepped {model text items tutorable p1 p2 p3 p4} {
   global .stepper.next_text.var
   global stepper_tutorable
   global options_array
+  global tutor_bindings
 
   set .stepper.next_text.var ""
 
@@ -399,7 +409,14 @@ proc display_stepper_stepped {model text items tutorable p1 p2 p3 p4} {
   }
   
   if {$tutorable != "null" && $stepper_tutor} {
-    set stepper_tutored 1
+
+    if {[string compare -nocase $tutorable "conflict-resolution"] == 0} {
+      set stepper_tutored 2
+    } elseif {[string compare -nocase $tutorable "start-retrieval"] == 0} {
+      set stepper_tutored 3
+    } else {
+      set stepper_tutored 1
+    }
     
     if {[llength $items] > 1} {
       set items [list [lindex $items 0]]
@@ -408,6 +425,25 @@ proc display_stepper_stepped {model text items tutorable p1 p2 p3 p4} {
     set stepper_tutored 0
   }
   update_list_box .stepper.prod_frame.f4.f.list $items 1 1
+
+  if {$stepper_tutored == 2 } {
+    
+    set data [call_act_r_command "update-stepper" nil false]
+    
+    set tutor_bindings(productions) [lindex $data 0]
+
+    display_conflict_resolution
+  } 
+
+  if {$stepper_tutored == 3 } {
+    
+    set data [call_act_r_command "update-stepper" nil false]
+    
+    set tutor_bindings(retrieval) [lindex $data 0]
+
+    display_retrieval_choice
+  }
+
 
   if $options_array(update_when_stepped) {
     update_registered_windows
@@ -419,6 +455,7 @@ proc stepper_step_button {} {
   global stepper_tutor
   global tutor_bindings
   global current_stepper_id
+  global stepper_tutored
 
   if {!$stepper_tutor || [array names tutor_bindings] == ""} { 
 
@@ -434,8 +471,17 @@ proc stepper_step_button {} {
      
 
   } else {
-    tk_messageBox -icon info -type ok -title "Tutoring" \
-                  -message "You must complete the instantiation before continuing in tutor mode."
+    if {$stepper_tutored == 1} {
+      tk_messageBox -icon info -type ok -title "Tutoring" \
+                    -message "You must complete the production instantiation before continuing in tutor mode."
+    } elseif {$stepper_tutored == 2} {
+      tk_messageBox -icon info -type ok -title "Tutoring" \
+                    -message "You must complete the conflict-resolution selection before continuing in tutor mode."
+    } elseif {$stepper_tutored == 3} {
+      tk_messageBox -icon info -type ok -title "Tutoring" \
+                    -message "You must complete the retrieved chunk selection before continuing in tutor mode."
+    }
+
   }
 }    
 
@@ -504,7 +550,7 @@ proc update_instantiation_viewers {list} {
 
     update_text_pane .stepper.prod_frame.f3.f.text $display
 
-    if $stepper_tutored {
+    if {$stepper_tutored == 1} {
 
       set b ""
       set line 1
@@ -609,7 +655,6 @@ proc update_instantiation_viewers {list} {
         }
       }
       update_text_pane .stepper.prod_frame.f2.f.text $b
-
     } else {
       update_text_pane .stepper.prod_frame.f2.f.text $bindings
     }
@@ -735,6 +780,495 @@ proc tutor_help {word} {
 
   set tutor_help "The binding of $word is [lindex $tutor_answers($word) 0]"
 }
+
+proc check_conflict_resolution {} {
+
+  global tutor_bindings
+  global tutor_selections
+  global tutor_cr_none
+ 
+  set data $tutor_bindings(productions)
+
+  set picked 0
+
+  for {set count 0} {$count < [llength $data]} {incr count} {
+    if $tutor_selections($count) {
+      incr picked
+    }
+  }
+
+  if {$tutor_cr_none == 0 && $picked == 0} {
+  
+
+
+   tk_messageBox -icon info -type ok -title "Tutoring" \
+                    -message "You must select at least one production or the None match option."
+
+  } else {
+    set count 0
+    set correct 0
+
+    foreach i $data {
+
+      .tutor_cr.frame.c.contents.$count.but.b configure -state disabled
+
+      set value [lindex $i 1]
+
+      pack forget .tutor_cr.frame.c.contents.$count
+
+      incr count
+    }
+
+    set count 0
+
+    foreach i $data {
+
+      set value [lindex $i 1]
+
+      if $tutor_selections($count) {
+        if {$value == ""} {
+          incr correct
+        } else {
+          .tutor_cr.frame.c.contents.$count.label configure -width [winfo width .tutor_cr.frame.c.contents.$count.but.text]
+          .tutor_cr.frame.c.contents.$count.label configure -text "Does not match.\n[lindex $i 1]"
+          pack .tutor_cr.frame.c.contents.$count
+
+          update_text_pane .tutor_cr.frame.c.contents.$count.but.text [.tutor_cr.frame.c.contents.$count.but.text get 1.0 end]
+        }
+      } else {
+        if {$value != ""} {
+          incr correct
+        } else {
+
+          .tutor_cr.frame.c.contents.$count.label configure -width [winfo width .tutor_cr.frame.c.contents.$count.but.text]
+
+          .tutor_cr.frame.c.contents.$count.label configure -text "Does match the current state."
+
+          pack .tutor_cr.frame.c.contents.$count
+          
+          update_text_pane .tutor_cr.frame.c.contents.$count.but.text [.tutor_cr.frame.c.contents.$count.but.text get 1.0 end]
+
+        }
+      }
+      incr count
+    }
+
+  if {$correct == [llength $data]} {
+    destroy .tutor_cr
+  } else {
+    destroy .tutor_cr.none
+  .tutor_cr.message configure -text "These selections were incorrect. Press Ok after reviewing the reasons."
+  .tutor_cr.button configure -command "destroy .tutor_cr" -text "Ok"
+  }
+}
+}
+
+proc unselect_all_productions {} {
+
+  global tutor_bindings
+  global tutor_cr_none
+
+  if {$tutor_cr_none == 1} {
+    for {set c 0} {$c < [llength $tutor_bindings(productions)]} {incr c} {
+  
+      .tutor_cr.frame.c.contents.$c.but.b deselect
+    }
+  }
+}
+
+proc display_conflict_resolution {} {
+  global tutor_bindings
+  global tutor_selections
+
+  if [array exists tutor_selections] {
+    array unset tutor_selections
+  } 
+
+  set data $tutor_bindings(productions)
+
+  if {[winfo exists .tutor_cr] == 1} {
+    wm deiconify .tutor_cr
+    raise .tutor_cr
+
+  } else {
+
+    toplevel .tutor_cr
+    wm withdraw .tutor_cr
+    wm title .tutor_cr "Conflict Resolution"
+
+    wm geometry .tutor_cr [get_configuration .tutor_cr]
+
+    message .tutor_cr.message \
+          -text "Using the information in the buffers, click the box next to each of the productions which have conditions that match the current state, or check the box labeled 'None match' if none of them match.  Then Press the Check button when done." \
+          -font label_font
+
+
+    place .tutor_cr.message -x 2 -y 5 -width -4 -relwidth 1.0 -height 100
+
+    button .tutor_cr.button -text "Check" -font button_font -command check_conflict_resolution
+    
+    place .tutor_cr.button -x -40 -relx .5 -width 80 -height 25 -y 110
+
+
+    checkbutton .tutor_cr.none -text "None match" -command unselect_all_productions -variable tutor_cr_none
+
+    .tutor_cr.none deselect
+
+    place .tutor_cr.none -x 2 -y 140 -height 20 
+
+    
+    bind .tutor_cr <Destroy> {
+        global tutor_bindings
+        global tutor_selections
+        array unset tutor_bindings
+        array unset tutor_selections
+    }    
+
+
+    # Use a simple scrollable frame which is based on code
+    # found at http://www.tek-tips.com/viewthread.cfm?qid=372792 by 
+    # Ken Jones of Avia Training and Consulting, www.avia-training.com
+
+    # Create a "hull" frame to contain all other widgets 
+    # composing the scrollable frame.
+
+    frame .tutor_cr.frame
+ 
+    canvas .tutor_cr.frame.c -height [winfo height .tutor_cr]  -width [winfo width .tutor_cr] -yscrollcommand ".tutor_cr.frame.ybar set"
+    scrollbar .tutor_cr.frame.ybar -orient vertical -command ".tutor_cr.frame.c yview"
+ 
+    # Create the frame that will actually
+    # hold all children of the scrollable
+    # frame. All children should be packed
+    # or gridded into this frame, *not* the
+    # hull frame or the canvas!
+
+    frame .tutor_cr.frame.c.contents -borderwidth 0
+ 
+    # Tell the canvas to display the frame,
+    # anchoring the upper-left hand corner
+    # of the frame in the upper-left hand
+    # corner of the canvas
+ 
+    .tutor_cr.frame.c create window 0 0 -anchor nw -window .tutor_cr.frame.c.contents -tag win
+ 
+    # Use grid to display the canvas and its
+    # scrollbars. Handle resizing properly.
+ 
+    grid .tutor_cr.frame.c -row 0 -column 0 -sticky nsew -pady 4 -padx 2
+    grid .tutor_cr.frame.ybar -row 0 -column 1 -sticky ns -pady 4 -padx 2
+    grid columnconfigure .tutor_cr.frame 0 -weight 1
+    grid rowconfigure .tutor_cr.frame 0 -weight 1
+ 
+    # Detect <Configure> events on the frame
+    # to detect when it is first displayed
+    # and any time is is resized. In either
+    # case, recompute the visible bounds of
+    # the canvas and update its -scrollregion
+    # attribute.
+ 
+
+    bind .tutor_cr.frame <Configure> {
+      .tutor_cr.message configure -width [winfo width .tutor_cr.frame.c]
+
+      .tutor_cr.frame.c configure -scrollregion [.tutor_cr.frame.c bbox all]
+      .tutor_cr.frame.c itemconfigure win -width [winfo width .tutor_cr.frame.c]
+      .tutor_cr.frame.c itemconfigure win -height [winfo height .tutor_cr.frame.c]
+    }
+
+    bind .tutor_cr.frame.c.contents <Configure> {
+
+      .tutor_cr.message configure -width [winfo width .tutor_cr.frame.c]
+      .tutor_cr.frame.c configure -scrollregion [.tutor_cr.frame.c bbox all]
+      .tutor_cr.frame.c itemconfigure win -width [winfo width .tutor_cr.frame.c]
+      .tutor_cr.frame.c itemconfigure win -height [winfo height .tutor_cr.frame.c]
+    }
+
+    place .tutor_cr.frame -x 0 -y 160 -relwidth 1.0 -relheight 1.0 -height -160
+
+
+    set count 0
+
+    foreach i $data {
+
+      frame .tutor_cr.frame.c.contents.$count -borderwidth 0
+      frame .tutor_cr.frame.c.contents.$count.but -borderwidth 0
+
+      checkbutton .tutor_cr.frame.c.contents.$count.but.b -variable tutor_selections($count) -command ".tutor_cr.none deselect"
+
+      .tutor_cr.frame.c.contents.$count.but.b deselect
+
+      text .tutor_cr.frame.c.contents.$count.but.text -state disabled -font text_font -width 45 -height [expr 1 + [llength [split [lindex $i 0] "\n"]]]
+ 
+      update_text_pane .tutor_cr.frame.c.contents.$count.but.text "(p production[expr 1 + $count]\n[lindex $i 0]==>"
+
+      message .tutor_cr.frame.c.contents.$count.label -text "" -font label_font -justify left
+
+      # grid config .tutor_cr.frame.c.contents.$count.text -column 1 -row 0 -sticky nsew
+
+      # grid config .tutor_cr.frame.c.contents.$count.label -column 1 -row 1 -sticky w
+
+      # grid .tutor_cr.frame.c.contents.$count.b -column 0 -row 0 -sticky nsew
+
+
+      pack .tutor_cr.frame.c.contents.$count.but.b -side left
+      pack .tutor_cr.frame.c.contents.$count.but.text -side right
+      pack .tutor_cr.frame.c.contents.$count.but
+      pack .tutor_cr.frame.c.contents.$count.label
+
+
+
+      pack .tutor_cr.frame.c.contents.$count -anchor nw
+
+      
+      incr count
+    }
+
+    wm deiconify .tutor_cr
+
+  }
+
+}
+
+
+proc check_start_retrieval {} {
+
+  global tutor_bindings
+  global tutor_selections
+  global tutor_r_none
+ 
+  set data $tutor_bindings(retrieval)
+
+  set picked 0
+
+  for {set count 0} {$count < [llength [lindex $data 1]]} {incr count} {
+    if $tutor_selections($count) {
+      incr picked
+    }
+  }
+
+  if {$tutor_r_none == 0 && $picked == 0} {
+
+   tk_messageBox -icon info -type ok -title "Tutoring" \
+                    -message "You must select at least one chunk or the None match option."
+
+  } else {
+
+    set count 0
+    set correct 0
+
+    foreach i [lindex $data 1] {
+
+      .tutor_r.frame.c.contents.$count.but.b configure -state disabled
+
+      set value [lindex $i 1]
+
+      pack forget .tutor_r.frame.c.contents.$count
+      
+      incr count
+    }
+
+    set count 0
+
+    foreach i [lindex $data 1] {
+
+      set value [lindex $i 1]
+
+      if $tutor_selections($count) {
+        if {$value == true} {
+          incr correct
+        } else {
+          .tutor_r.frame.c.contents.$count.label configure -width [winfo width .tutor_r.frame.c.contents.$count.but.text]
+          .tutor_r.frame.c.contents.$count.label configure -text "Does not match the retrieval request."
+          pack .tutor_r.frame.c.contents.$count
+
+          update_text_pane .tutor_r.frame.c.contents.$count.but.text [.tutor_r.frame.c.contents.$count.but.text get 1.0 end]
+        }
+      } else {
+        if {$value == "null"} {
+          incr correct
+        } else {
+          .tutor_r.frame.c.contents.$count.label configure -width [winfo width .tutor_r.frame.c.contents.$count.but.text]
+          .tutor_r.frame.c.contents.$count.label configure -text "Does match the retrieval request."
+          pack .tutor_r.frame.c.contents.$count
+          update_text_pane .tutor_r.frame.c.contents.$count.but.text [.tutor_r.frame.c.contents.$count.but.text get 1.0 end]
+        }
+      }
+      incr count
+    }
+
+    if {$correct == [llength [lindex $data 1]]} {
+      destroy .tutor_r
+    } else {
+      destroy .tutor_r.none
+      .tutor_r.message configure -text "These selections were incorrect. Press Ok after reviewing the results.\n\n[lindex $data 0]"
+      .tutor_r.button configure -command "destroy .tutor_r" -text "Ok"
+    }
+  }
+}
+
+proc unselect_all_retrievals {} {
+
+  global tutor_bindings
+  global tutor_r_none
+
+  if {$tutor_r_none == 1} {
+    for {set c 0} {$c < [llength [lindex $tutor_bindings(retrieval) 1]]} {incr c} {
+  
+      .tutor_r.frame.c.contents.$c.but.b deselect
+    }
+  }
+}
+
+proc display_retrieval_choice {} {
+  global tutor_bindings
+  global tutor_selections
+
+  if [array exists tutor_selections] {
+    array unset tutor_selections
+  } 
+
+  set data $tutor_bindings(retrieval)
+
+  if {[winfo exists .tutor_r] == 1} {
+    wm deiconify .tutor_r
+    raise .tutor_r
+
+  } else {
+
+    toplevel .tutor_r
+    wm withdraw .tutor_r
+    wm title .tutor_r "Start Retrieval"
+
+    wm geometry .tutor_r [get_configuration .tutor_r]
+
+    message .tutor_r.message \
+          -text "Click the box next to each chunk from the model's declarative memory which matches the retrieval request from the production that fired (shown below) or check the 'None match' box if none of them match. Then press the Check button when done.\n\n[lindex $data 0]" \
+          -font label_font
+
+    place .tutor_r.message -x 2 -y 5 -width -4 -relwidth 1.0 -height 150
+
+    button .tutor_r.button -text "Check" -font button_font -command check_start_retrieval
+    
+    place .tutor_r.button -x -40 -relx .5 -width 80 -height 25 -y 160
+
+    checkbutton .tutor_r.none -text "None match" -command unselect_all_retrievals -variable tutor_r_none
+
+    .tutor_r.none deselect
+
+    place .tutor_r.none -x 2 -y 190 -height 20 
+
+
+
+    bind .tutor_r <Destroy> {
+        global tutor_bindings
+        global tutor_selections
+        array unset tutor_bindings
+        array unset tutor_selections
+    }    
+
+
+    # Use a simple scrollable frame which is based on code
+    # found at http://www.tek-tips.com/viewthread.cfm?qid=372792 by 
+    # Ken Jones of Avia Training and Consulting, www.avia-training.com
+
+    # Create a "hull" frame to contain all other widgets 
+    # composing the scrollable frame.
+
+    frame .tutor_r.frame
+ 
+    canvas .tutor_r.frame.c -height [winfo height .tutor_r] -width [winfo width .tutor_r] -yscrollcommand ".tutor_r.frame.ybar set"
+    scrollbar .tutor_r.frame.ybar -orient vertical -command ".tutor_r.frame.c yview"
+ 
+    # Create the frame that will actually
+    # hold all children of the scrollable
+    # frame. All children should be packed
+    # or gridded into this frame, *not* the
+    # hull frame or the canvas!
+
+    frame .tutor_r.frame.c.contents -borderwidth 0
+ 
+    # Tell the canvas to display the frame,
+    # anchoring the upper-left hand corner
+    # of the frame in the upper-left hand
+    # corner of the canvas
+ 
+    .tutor_r.frame.c create window 0 0 -anchor nw -window .tutor_r.frame.c.contents -tag win
+ 
+    # Use grid to display the canvas and its
+    # scrollbars. Handle resizing properly.
+ 
+    grid .tutor_r.frame.c -row 0 -column 0 -sticky nsew -pady 4 -padx 2
+    grid .tutor_r.frame.ybar -row 0 -column 1 -sticky ns -pady 4 -padx 2
+    grid columnconfigure .tutor_r.frame 0 -weight 1
+    grid rowconfigure .tutor_r.frame 0 -weight 1
+ 
+    # Detect <Configure> events on the frame
+    # to detect when it is first displayed
+    # and any time is is resized. In either
+    # case, recompute the visible bounds of
+    # the canvas and update its -scrollregion
+    # attribute.
+ 
+
+    bind .tutor_r.frame <Configure> {
+      .tutor_r.message configure -width [winfo width .tutor_r.frame.c]
+     
+      .tutor_r.frame.c configure -scrollregion [.tutor_r.frame.c bbox all]
+      .tutor_r.frame.c itemconfigure win -width [winfo width .tutor_r.frame.c]
+      .tutor_r.frame.c itemconfigure win -height [winfo height .tutor_r.frame.c]
+    }
+
+    bind .tutor_r.frame.c.contents <Configure> {
+
+      .tutor_r.message configure -width [winfo width .tutor_r.frame.c]
+      .tutor_r.frame.c configure -scrollregion [.tutor_r.frame.c bbox all]
+      .tutor_r.frame.c itemconfigure win -width [winfo width .tutor_r.frame.c]
+      .tutor_r.frame.c itemconfigure win -height [winfo height .tutor_r.frame.c]
+    }
+
+    place .tutor_r.frame -x 0 -y 210 -relwidth 1.0 -relheight 1.0 -height -210
+
+
+    set count 0
+
+    foreach i [lindex $data 1] {
+
+      frame .tutor_r.frame.c.contents.$count -borderwidth 0
+
+      frame .tutor_r.frame.c.contents.$count.but -borderwidth 0
+
+      checkbutton .tutor_r.frame.c.contents.$count.but.b -variable tutor_selections($count) -command ".tutor_r.none deselect"
+
+      .tutor_r.frame.c.contents.$count.but.b deselect
+
+      text .tutor_r.frame.c.contents.$count.but.text -state disabled -font text_font -width 45 -height [llength [split [lindex $i 0] "\n"]]
+ 
+      update_text_pane .tutor_r.frame.c.contents.$count.but.text [lindex $i 0]
+
+      message .tutor_r.frame.c.contents.$count.label -text "" -font label_font -justify left
+
+#      grid config .tutor_r.frame.c.contents.$count.text -column 1 -row 0 -sticky nsew
+#      grid config .tutor_r.frame.c.contents.$count.label -column 1 -row 1 -sticky w
+#      grid .tutor_r.frame.c.contents.$count.b -column 0 -row 0 -sticky nsew
+
+      pack .tutor_r.frame.c.contents.$count.but.b -side left
+      pack .tutor_r.frame.c.contents.$count.but.text -side right
+      pack .tutor_r.frame.c.contents.$count.but
+      pack .tutor_r.frame.c.contents.$count.label
+
+      pack .tutor_r.frame.c.contents.$count -anchor nw
+
+      
+      incr count
+    }
+
+    wm deiconify .tutor_r
+
+  }
+
+}
+
 
 
 

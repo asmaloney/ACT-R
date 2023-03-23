@@ -55,11 +55,11 @@
 CG-USER(119): (run-test t)
 CG-USER(38): (run-test)
      0.000   ------                 Stopped because event limit reached
-Name              Att  Loc             Image  Kind   Height  Width  Value      Size      
+Name              Att  Loc             IMAGE  KIND   HEIGHT  WIDTH  VALUE      SIZE        
 ----------------  ---  --------------  -----  -----  ------  -----  ---------  ----------
-VISUAL-LOCATION1  NEW  (374 524 1080)  T      IMAGE  128     128    "brain"    46.0      
-VISUAL-LOCATION2  NEW  (374 654 1080)  T      IMAGE  128     128    "brain-2"  46.0      
-VISUAL-LOCATION0  NEW  (454 381 1080)  T      IMAGE  142     288    "logo"     114.259995
+VISUAL-LOCATION1  NEW  (374 524 1080)  T      IMAGE  128     128    "brain"    46.0        
+VISUAL-LOCATION2  NEW  (374 654 1080)  T      IMAGE  128     128    "brain-2"  46.0        
+VISUAL-LOCATION0  NEW  (454 381 1080)  T      IMAGE  142     288    "logo"     114.259995  
 
      0.000   VISION                 SET-BUFFER-CHUNK VISUAL-LOCATION VISUAL-LOCATION0 NIL
      0.000   VISION                 visicon-update
@@ -92,14 +92,14 @@ IMAGE0-0
      0.185   PROCEDURAL             CLEAR-BUFFER VISUAL
      0.185   PROCEDURAL             CLEAR-BUFFER IMAGINAL
      0.185   PROCEDURAL             CONFLICT-RESOLUTION
-     0.385   IMAGINAL               SET-BUFFER-CHUNK IMAGINAL CHUNK0
+     0.385   IMAGINAL               SET-BUFFER-CHUNK-FROM-SPEC IMAGINAL 
      0.385   PROCEDURAL             CONFLICT-RESOLUTION
      0.435   PROCEDURAL             PRODUCTION-FIRED MOVE
      0.435   PROCEDURAL             CLEAR-BUFFER IMAGINAL
      0.435   PROCEDURAL             CLEAR-BUFFER MANUAL
      0.435   PROCEDURAL             CLEAR-BUFFER GOAL
-     0.435   MOTOR                  MOVE-CURSOR LOC CHUNK0-0
-     0.435   GOAL                   SET-BUFFER-CHUNK GOAL CHUNK1
+     0.435   MOTOR                  MOVE-CURSOR LOC CHUNK0
+     0.435   GOAL                   SET-BUFFER-CHUNK-FROM-SPEC GOAL 
      0.435   PROCEDURAL             CONFLICT-RESOLUTION
      0.635   PROCEDURAL             CONFLICT-RESOLUTION
      0.685   PROCEDURAL             CONFLICT-RESOLUTION
@@ -143,17 +143,17 @@ IMAGE1-0
      1.070   PROCEDURAL             CLEAR-BUFFER IMAGINAL
      1.070   PROCEDURAL             CONFLICT-RESOLUTION
      1.085   PROCEDURAL             CONFLICT-RESOLUTION
-Image with id "logo" clicked at relative position 144 71
+#|Warning: Image "logo" with no valid action clicked at position 144,71 at time 1.095. |#
      1.095   PROCEDURAL             CONFLICT-RESOLUTION
      1.185   PROCEDURAL             CONFLICT-RESOLUTION
-     1.270   IMAGINAL               SET-BUFFER-CHUNK IMAGINAL CHUNK2
+     1.270   IMAGINAL               SET-BUFFER-CHUNK-FROM-SPEC IMAGINAL 
      1.270   PROCEDURAL             CONFLICT-RESOLUTION
      1.320   PROCEDURAL             PRODUCTION-FIRED MOVE
      1.320   PROCEDURAL             CLEAR-BUFFER IMAGINAL
      1.320   PROCEDURAL             CLEAR-BUFFER MANUAL
      1.320   PROCEDURAL             CLEAR-BUFFER GOAL
-     1.320   MOTOR                  MOVE-CURSOR LOC CHUNK2-0
-     1.320   GOAL                   SET-BUFFER-CHUNK GOAL CHUNK3
+     1.320   MOTOR                  MOVE-CURSOR LOC CHUNK1
+     1.320   GOAL                   SET-BUFFER-CHUNK-FROM-SPEC GOAL 
      1.320   PROCEDURAL             CONFLICT-RESOLUTION
      1.520   PROCEDURAL             CONFLICT-RESOLUTION
      1.570   PROCEDURAL             CONFLICT-RESOLUTION
@@ -200,14 +200,14 @@ IMAGE2-0
 Clicked image "brain" at 64 64
      1.980   PROCEDURAL             CONFLICT-RESOLUTION
      2.070   PROCEDURAL             CONFLICT-RESOLUTION
-     2.155   IMAGINAL               SET-BUFFER-CHUNK IMAGINAL CHUNK4
+     2.155   IMAGINAL               SET-BUFFER-CHUNK-FROM-SPEC IMAGINAL 
      2.155   PROCEDURAL             CONFLICT-RESOLUTION
      2.205   PROCEDURAL             PRODUCTION-FIRED MOVE
      2.205   PROCEDURAL             CLEAR-BUFFER IMAGINAL
      2.205   PROCEDURAL             CLEAR-BUFFER MANUAL
      2.205   PROCEDURAL             CLEAR-BUFFER GOAL
-     2.205   MOTOR                  MOVE-CURSOR LOC CHUNK4-0
-     2.205   GOAL                   SET-BUFFER-CHUNK GOAL CHUNK5
+     2.205   MOTOR                  MOVE-CURSOR LOC CHUNK2
+     2.205   GOAL                   SET-BUFFER-CHUNK-FROM-SPEC GOAL 
      2.205   PROCEDURAL             CONFLICT-RESOLUTION
      2.405   PROCEDURAL             CONFLICT-RESOLUTION
      2.455   PROCEDURAL             CONFLICT-RESOLUTION
@@ -220,7 +220,7 @@ Clicked image "brain" at 64 64
      2.655   PROCEDURAL             CLEAR-BUFFER VISUAL-LOCATION
      2.655   MOTOR                  CLICK-MOUSE
      2.655   VISION                 Find-location
-     2.655   VISION                 FIND-LOC-FAILURE
+     2.655   VISION                 find-loc-failure
      2.655   PROCEDURAL             CONFLICT-RESOLUTION
      2.805   PROCEDURAL             CONFLICT-RESOLUTION
      2.855   PROCEDURAL             CONFLICT-RESOLUTION

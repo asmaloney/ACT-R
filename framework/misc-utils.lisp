@@ -357,6 +357,14 @@
 ;;;             :   item list (either added, removed, or unchanged).  The 
 ;;;             :   assumption is that they should always return the current
 ;;;             :   setting instead of nil on 'failure'.
+;;; 2021.10.19 Dan
+;;;             : * Changed the declaim for get-module-fct since it has an
+;;;             :   optional now.
+;;; 2022.01.28 Dan
+;;;             : * Fixed a problem with polar-move-xy always returning only a
+;;;             :   two element vector, but now adds on any other values that
+;;;             :   were present in the original (presumably only a z value but
+;;;             :   don't assume that now).
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -419,7 +427,7 @@
 (declaim (ftype (function (t) t) act-r-random))
 (declaim (ftype (function () t) current-model))
 (declaim (ftype (function () t) mp-models))
-(declaim (ftype (function (t) t) get-module-fct))
+(declaim (ftype (function (t &optional t) t) get-module-fct))
 (declaim (ftype (function (t &rest t) t) evaluate-act-r-command))
 
 ;;; WHILE      [Macro]
@@ -1009,10 +1017,13 @@ doesn't seem to be any better...
 
 
 (defun polar-move-xy (loc move)
-  (round-xy
-   (list (+ (px loc) (* (px move) (cos (py move))))
-         (+ (py loc) (* (px move) (sin (py move)))))))
-
+  (let ((new-xy-loc (round-xy
+                  (list (+ (px loc) (* (px move) (cos (py move))))
+                        (+ (py loc) (* (px move) (sin (py move))))))))
+                 
+    (if (= 2 (length loc))
+        new-xy-loc
+      (concatenate 'vector new-xy-loc (subseq loc 2)))))
 
 ;;; DIST      [Function]
 ;;; Description : Computes the distance between two points in N-dimensional space

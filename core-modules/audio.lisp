@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : audio.lisp
-;;; Version     : 6.1
+;;; Version     : 7.0
 ;;; 
 ;;; Description : Source for RPM's Audition Module
 ;;; 
@@ -479,6 +479,8 @@
 ;;; 2021.06.09 Dan [6.1]
 ;;;             : * Make sure the aural-location buffer always gets a new 
 ;;;             :   chunk when it's set with buffer-requires-copies.
+;;; 2021.10.20 Dan [7.0]
+;;;             : * Audio is required if speech is required.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -507,7 +509,7 @@
 
    (last-stuffed-event :accessor last-stuffed-event :initform nil))
    (:default-initargs
-     :version-string "6.1"
+     :version-string "7.0"
      :name :AUDIO))
 
 
@@ -1414,7 +1416,8 @@
   :reset 'reset-audio-module
   :query 'query-audio-module
   :request 'pm-module-request
-  :params 'params-audio-module)
+  :params 'params-audio-module
+  :required :speech)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; User Commands

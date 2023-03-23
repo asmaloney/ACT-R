@@ -342,6 +342,8 @@
 ;;;             : * Added a string-downcase to require-compiled when the path
 ;;;             :   is not provived since the module strings are upper case but
 ;;;             :   the file names are lower case.
+;;; 2021.10.01 Dan
+;;;             : * Added the remote written-for-act-r-version here.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -808,7 +810,9 @@
       (print-warning "Invalid version specified in written-for-act-r-version: ~s.  Version must be an ACT-R version string." version)
       :invalid-value)))
 
-  
+
+(add-act-r-command "written-for-act-r-version" 'written-for-act-r-version "Check a given version number against the current version for compatibility. Params: version-string {checking-info}")
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Define a macro to make loading extras easier
 

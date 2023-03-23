@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : random.lisp
-;;; Version     : 1.1
+;;; Version     : 2.0
 ;;; 
 ;;; Description : Module that contains a pseudo-random number generator.
 ;;; 
@@ -127,6 +127,8 @@
 ;;;             :   for SBCL as was done previously).
 ;;;             : * Specify an initial value and change the type for the array
 ;;;             :   to make SBCL happy...
+;;; 2021.10.19 Dan [2.0]
+;;;             : * Set the :required flag on the module.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -468,12 +470,13 @@ in the test output file provided with mt19937ar.c -> mt19937ar.out.txt
      :documentation 
      "Allows the timing of certain actions to vary")
    )
-  :version "1.1"
+  :version "2.0"
   :documentation 
   "Provide a good and consistent source of pseudorandom numbers for all systems"
   :creation 'create-random-module
   ; Don't need to do anything special on reset :reset ...
-  :params 'random-module-params)
+  :params 'random-module-params
+  :required t)
 
 
 (defun act-r-random (limit)

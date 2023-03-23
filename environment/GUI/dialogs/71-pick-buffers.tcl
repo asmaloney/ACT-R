@@ -21,7 +21,7 @@ proc pick_buffers {} {
 
       record_new_window $win $win $model
 
-      set buffers [lindex [call_act_r_command "buffers" $model ""] 0]
+      set buffers [lindex [call_act_r_command "model-buffers" $model ""] 0]
 
       set y 0
 

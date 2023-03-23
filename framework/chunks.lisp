@@ -587,6 +587,15 @@
 ;;;             :   that wants to "store" a chunk that was cleared from a buffer
 ;;;             :   or was specified in a request slot: chunk-not-storable.  If
 ;;;             :   that is true then a copy should be made and stored instead.
+;;; 2021.10.19 Dan
+;;;             : * Changed the declaim for get-module-fct since it has an
+;;;             :   optional now.
+;;; 2022.03.04 Dan
+;;;             : * Fixed a problem with how the :second and :second-if merging
+;;;             :   mechanisms apply because they would copy the "undefined"
+;;;             :   status of c2 into c1 when c1 already had a value, but should
+;;;             :   use the default value of c2 instead for :second and not 
+;;;             :   change it in the case of :second-if.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -614,7 +623,7 @@
 #-(or (not :clean-actr) :packaged-actr :ALLEGRO-IDE) (in-package :cl-user)
 
 
-(declaim (ftype (function (t) (values t t)) get-module-fct))
+(declaim (ftype (function (t &optional t) (values t t)) get-module-fct))
 (declaim (ftype (function (&optional t) t) sgp-fct))
 (declaim (ftype (function () t) current-model))
 (declaim (ftype (function () t) use-short-copy-names))
@@ -1661,11 +1670,17 @@
               (setf (aref (act-r-chunk-parameter-values c1) (act-r-chunk-parameter-index param))
                 (case (act-r-chunk-parameter-merge param)
                   (:second 
-                   (aref (act-r-chunk-parameter-values c2) (act-r-chunk-parameter-index param)))
+                   (let ((v (aref (act-r-chunk-parameter-values c2) (act-r-chunk-parameter-index param))))
+                     (if (eq v *chunk-parameter-undefined*)
+                         (chunk-parameter-default param chunk-name2)
+                         v)))
                   (:second-if
-                   (aif (aref (act-r-chunk-parameter-values c2) (act-r-chunk-parameter-index param))
-                        it
-                        (aref (act-r-chunk-parameter-values c1) (act-r-chunk-parameter-index param))))
+                   (let ((v (aref (act-r-chunk-parameter-values c2) (act-r-chunk-parameter-index param))))
+                     (when (eq v *chunk-parameter-undefined*)
+                       (setf v (chunk-parameter-default param chunk-name2)))
+                     (if v
+                         v
+                       (aref (act-r-chunk-parameter-values c1) (act-r-chunk-parameter-index param)))))
                   (t
                    (dispatch-apply (act-r-chunk-parameter-merge param) chunk-name1 chunk-name2)))))
             

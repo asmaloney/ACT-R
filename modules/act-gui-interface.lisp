@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : act-gui-interface.lisp
-;;; Version     : 5.0
+;;; Version     : 6.0
 ;;; 
 ;;; Description : Contains the functions that implement the abstract GUI
 ;;;             : interface used by the tutorial units and the misc functions
@@ -355,6 +355,13 @@
 ;;; 2020.06.02 Dan
 ;;;             : * Removed an unnecessary with-recursive-lock-held from 
 ;;;             :   add-items-to-exp-window because it already had the lock.
+;;; 2021.10.20 Dan [6.0]
+;;;             : * Have it check before installing devices to make sure that
+;;;             :   the corresponding module is avaliable.
+;;; 2022.02.18 Dan 
+;;;             : * Fixed a bug with modify-button-for-exp-window in how it
+;;;             :   handles the modifications for passing to the underlying
+;;;             :   button object since the action could be a list of things.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -447,7 +454,7 @@
   (bt:with-recursive-lock-held ((agi-lock instance))
     (clrhash (installed-windows instance))))
 
-(define-component agi :version "5.0" :documentation "Manager for the AGI windows"
+(define-component agi :version "6.0" :documentation "Manager for the AGI windows"
   :creation create-agi-module
   :clear-all clear-all-agi-module
   :delete delete-agi-module
@@ -486,20 +493,24 @@
                (push win-identifier (gethash (current-model) (installed-windows agi))))
              
              
-             (unless (find "keyboard" (current-devices "motor") :key 'second :test 'string-equal)
-               (install-device (list "motor" "keyboard")))
+             (when (get-module-fct :motor t)
+               (unless (find "keyboard" (current-devices "motor") :key 'second :test 'string-equal)
+                 (install-device (list "motor" "keyboard"))))
              
-             (unless (find "microphone" (current-devices "speech") :key 'second :test 'string-equal)
-               (install-device (list "speech" "microphone")))
+             (when (get-module-fct :speech t)
+               (unless (find "microphone" (current-devices "speech") :key 'second :test 'string-equal)
+                 (install-device (list "speech" "microphone"))))
              
              (when (get-parameter-value :needs-mouse)
-               (unless (find-if (lambda (x) (string-equal (third x) "mouse") (string-equal (second x) "cursor")) (current-devices "motor"))
-                 (install-device (list "motor" "cursor" "mouse"))
-                 (set-cursor-position-fct (list (x-pos w) (y-pos w)) "mouse"))
+               (when (get-module-fct :motor t)
+                 (unless (find-if (lambda (x) (string-equal (third x) "mouse") (string-equal (second x) "cursor")) (current-devices "motor"))
+                   (install-device (list "motor" "cursor" "mouse"))
+                   (set-cursor-position-fct (list (x-pos w) (y-pos w)) "mouse")))
                
-               (when (get-parameter-value :process-cursor)
-                 (unless (find-if (lambda (x) (string-equal (third x) "mouse") (string-equal (second x) "cursor")) (current-devices "vision"))
-                   (install-device (list "vision" "cursor" "mouse")))))
+               (when (get-module-fct :vision t)
+                 (when (get-parameter-value :process-cursor)
+                   (unless (find-if (lambda (x) (string-equal (third x) "mouse") (string-equal (second x) "cursor")) (current-devices "vision"))
+                     (install-device (list "vision" "cursor" "mouse"))))))
 
                                              
              ;; Create the features for all subviews, add them to the visicon, and record them in the
@@ -1267,49 +1278,58 @@
                   mods)
              (when x
                (if (numberp x)
-                   (push (list :x x) mods)
+                   (progn
+                     (push x mods) 
+                     (push :x mods))
                  (print-warning "X parameter in modify-button-for-exp-window must be a number but given ~s." x)))
              (when y
                (if (numberp y)
-                   (push (list :y y) mods)
+                   (progn 
+                     (push y mods)
+                     (push :y mods))
                  (print-warning "y parameter in modify-button-for-exp-window must be a number but given ~s." y)))
              (when text
                (if (stringp text)
-                   (push (list :text text) mods)
+                   (progn
+                     (push text mods)
+                     (push :text mods))
                  (print-warning "Text parameter in modify-button-for-exp-window must be a string but given ~s." text)))
              (when height
                (if (numberp height)
-                   (push (list :height height) mods)
+                   (progn
+                     (push height mods)
+                     (push :height mods))
                  (print-warning "Height parameter in modify-button-for-exp-window must be a number but given ~s." height)))
              (when width
                (if (numberp width)
-                   (push (list :width width) mods)
+                   (progn 
+                     (push width mods)
+                     (push :width mods))
                  (print-warning "Width parameter in modify-button-for-exp-window must be a number but given ~s." width)))
              (when action
                (if (valid-button-action action)
-                   (push (list :action action) mods)
+                   (progn
+                     (push action mods)
+                     (push :action mods))
                  (print-warning "Action parameter in modify-button-for-exp-window must be a valid command but given ~s." action)))
              (when color
                (when (stringp color)
                  (setf color (aif (ignore-errors (read-from-string color)) it 'black)))
-               (push (list :color color) mods))
-
+               (push color mods)
+               (push :color mods))
+             
+             (push it mods)
+             
              (cond ((null mods)
                     ;; why even call it?
                     item
                     )
                    ((null (visual-features it)) ;; not in visicon so just make the changes
-                    (apply 'modify-button-for-rpm-window (cons it (flatten mods)))
+                    (apply 'modify-button-for-rpm-window mods)
                     item)
                    
                    ((> (length (first (visual-features it))) 3)
                     (print-warning "Cannot modify a button item which has multi-word text."))
-                   
-                   ((and (= (length (first (visual-features it))) 3) ; button and text items
-                         text
-                         (not (= (length (chop-string (get-module :vision) text)) 1))) ;one item on a line
-                    
-                    (print-warning "Cannot modify a button item which requires adding or removing features."))
                    
                    ((and (= (length (first (visual-features it))) 3) ; button and text items
                          text
@@ -1323,7 +1343,7 @@
                     
                     (print-warning "Cannot modify a button item which requires adding or removing features."))
                    (t
-                    (apply 'modify-button-for-rpm-window (cons it (flatten mods)))
+                    (apply 'modify-button-for-rpm-window mods)
                     
                     (bt:with-recursive-lock-held ((window-lock top-win))
                       ;; for every model that has this item's window installed

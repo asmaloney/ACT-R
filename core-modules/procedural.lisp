@@ -903,6 +903,11 @@
 ;;; 2021.08.18 Dan [8.3]
 ;;;             : * Don't reschedule conflict-resolution just because :v was
 ;;;             :   changed...
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead.
+;;; 2021.11.02 Dan
+;;;             : * Added the printed-production-side function which may be 
+;;;             :   useful for some things.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -1555,7 +1560,7 @@
                                                  (slot-mask->names (chunk-spec-filled-slots spec)))))))))))
         
         ;; also look at the buffers themselves to see if there are any chunks there
-        (dolist (buffer (buffers))
+        (dolist (buffer (model-buffers))
           (awhen (buffer-read buffer)
                  (setf (gethash buffer (procedural-init-chunk-slots procedural)) 
                    (remove-duplicates (append (gethash buffer (procedural-init-chunk-slots procedural)) (chunk-filled-slots-list-fct it))))))
@@ -2472,7 +2477,26 @@
             
             (get-output-stream-string s)))
       "")))
-    
+
+(defun printed-production-side (p-name lhs &optional instantiate)
+  
+  (let ((p (get-production p-name)))
+    (if p
+        (bt:with-recursive-lock-held ((production-lock p))
+          (let* ((s (make-string-output-stream))
+                 (bindings (if instantiate (production-bindings p) nil)))
+            
+            
+            (if lhs
+                (dolist (x (production-lhs p))
+                  (write-string (production-statement-text x bindings (when instantiate (production-partial-matched-slots p))) s))
+                        
+              (dolist (x (production-rhs p))
+                (write-string (production-statement-text x bindings nil) s)))
+                        
+            (get-output-stream-string s)))
+      "")))
+
 (defun production-statement-text (statement bindings partials)
   (let ((s (make-string-output-stream))
         (op (production-statement-op statement))

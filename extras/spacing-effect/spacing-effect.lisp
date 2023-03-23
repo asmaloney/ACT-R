@@ -45,6 +45,13 @@
 ;;; 2020.01.10 Dan [2.1]
 ;;;             : * Removed the #' from the module interface functions since 
 ;;;             :   that's not allowed in the general system now.
+;;; 2022.05.09 Dan
+;;;             : * Changed the "flag" value for :bll from 91923.12 to 12.34
+;;;             :   to avoid potential overflow issues in DM's setting of some
+;;;             :   other values in response.
+;;; 2022.05.23 Dan
+;;;             : * Set :ol to nil before setting the flag value of :bll when
+;;;             :   setting :eblse to avoid the warning about complex numbers.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -56,7 +63,7 @@
 ;;; must not be using the :bl-hook functionality (warnings will be printed if
 ;;; violations of either of those conditions are noticed).  In addition,
 ;;; the setting of :bll by the model will be ignored and it will be set to
-;;; the value 91923.12 to enable the computation of base levels (since that 
+;;; the value 12.34 to enable the computation of base levels (since that 
 ;;; parameter is both the switch and the parameter value) and provide a value 
 ;;; that I can check against for saftey testing (since it's very unlikely that 
 ;;; a user will every set that specific value).
@@ -209,12 +216,12 @@
                 (no-output (sgp :ol nil))))
              (:bll 
               (when (spacing-effect-enabled module)
-                (cond ((and (numberp (cdr param)) (not (= (cdr param) 91923.12)))
+                (cond ((and (numberp (cdr param)) (not (= (cdr param) 12.34)))
                        (model-warning "Changing :bll has no effect when :eblse is enabled")
-                       (no-output (sgp :bll 91923.12)))
+                       (no-output (sgp :bll 12.34)))
                       ((not (numberp (cdr param)))
                        (model-warning "Cannot turn off :bll while :eblse is enabled")
-                       (no-output (sgp :bll 91923.12))))
+                       (no-output (sgp :bll 12.34))))
                 ))
              (:bl-hook 
               (when (and (spacing-effect-enabled module)
@@ -225,8 +232,8 @@
              (:eblse (setf (spacing-effect-enabled module) (cdr param))
                      (no-output 
                       (when (cdr param)
-                        (sgp :bll 91923.12)
                         (sgp :ol nil)
+                        (sgp :bll 12.34)
                         (sgp :bl-hook compute-spacing-effect-activation)))
                      (cdr param))
              

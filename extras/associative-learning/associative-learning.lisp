@@ -65,6 +65,8 @@
 ;;; 2020.11.04 Dan
 ;;;             : * Updated the documentation to appropriately describe the new
 ;;;             :   changes.
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -377,7 +379,7 @@
     
     (setf (al-module-buffers al) nil)
     
-    (dolist (buffer (buffers))
+    (dolist (buffer (model-buffers))
       (unless (zerop (buffer-spread buffer))
         (if (eq buffer 'retrieval)
             (print-warning "Associative learning will not consider the retrieval buffer as a source of activation.")

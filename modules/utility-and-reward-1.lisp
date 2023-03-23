@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : utility-and-reward-1.lisp
-;;; Version     : 5.0
+;;; Version     : 6.0
 ;;; 
 ;;; Description : The procedural utility computation functions and a module
 ;;;             : for handling the "reward" given to a production.
@@ -184,6 +184,8 @@
 ;;; 2021.07.09 Dan
 ;;;             : * Fixed a bug with spp setting :at because it was returning
 ;;;             :   the time in ms instead of seconds.
+;;; 2021.10.19 Dan [6.0]
+;;;             : * Set the :required flag on the module to procedural.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; General:
 ;;;
@@ -625,12 +627,13 @@
           :warning "a function, string naming a command, nil, or (:remove <item>)" 
           :documentation "Depricated - monitor trigger-reward instead. Functions to call when there is a reward provided"))
   
-  :version "5.1" 
+  :version "6.0" 
   :documentation  "A module that computes production utilities"
     
   :creation 'create-utility-module
   :reset 'reset-utility-module
-  :params 'utility-module-params)
+  :params 'utility-module-params
+  :required 'procedural)
 
 (register-subsymbolic-parameters :egs :ul :iu :nu :alpha)
 

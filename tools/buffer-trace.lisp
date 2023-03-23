@@ -150,6 +150,9 @@
 ;;; 2021.06.07 Dan 
 ;;;             : * Deal with set-buffer-chunk and overwrite-... possibly having
 ;;;             :   a chunk-spec as the second parameter.
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead when adding
+;;;             :   notes (still check all at module creation time).
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -368,7 +371,7 @@
   (declare (ignore buffer notes)))
 
 (defun add-buffer-trace-notes (buffer notes)
-  (if (and (current-model) (find buffer (buffers)))
+  (if (and (current-model) (find buffer (model-buffers)))
       (progn 
         (schedule-event-now 'record-buffer-trace-notes
                             :maintenance t :priority :max

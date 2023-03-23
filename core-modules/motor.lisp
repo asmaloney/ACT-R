@@ -445,6 +445,10 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2022.01.28 Dan
+;;;             : * Updated move-cursor to better check the z coordinates of
+;;;             :   the movement because one or both could be missing but the
+;;;             :   code assumed both were there previously.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -1302,8 +1306,10 @@
                (cursor-loc (if known-loc known-loc (notify-device real-device (list 'current-position))))
                (r-theta (xy-to-polar cursor-loc target-loc)))
           
-          (unless (= (third cursor-loc) (third target-loc))
-            (model-warning "Move-cursor request has different z coordinates for start ~s and target ~s locations, but motor module assumes a cursor moves in only two dimensions." cursor-loc target-loc))
+          (unless (and (= (length cursor-loc) (length target-loc))
+                       (> (length cursor-loc) 2)
+                       (= (third cursor-loc) (third target-loc)))
+            (model-warning "Move-cursor request has different (or missing) z coordinates for start ~s and target ~s locations, but motor module assumes a cursor moves in only two dimensions." cursor-loc target-loc))
           
           (if (and (= 0 (vr r-theta)) (= (pz cursor-loc) (pz target-loc)))        ; r=0 is a no-op 
               (model-warning "Move-cursor action aborted because cursor is at requested target ~S" target)

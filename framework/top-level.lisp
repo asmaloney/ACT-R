@@ -122,6 +122,8 @@
 ;;; 2019.09.09 Dan
 ;;;             : * Adjusted calls to with-top-level lock to pass the string
 ;;;             :   that indicates why the lock is being held.
+;;; 2021.10.15 Dan [4.0]
+;;;             : * Added the call to clear-used-modules during clear-all.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -149,6 +151,7 @@
 
 
 (defvar *recorded-load-file* nil)
+
 
 (defun clear-all ()
   (when (mp-running?)
@@ -195,7 +198,7 @@
       (setf (meta-p-model-name-len mp) 0))
     )
   
-    
+  (clear-used-modules)
   (setf *recorded-load-file* *load-truename*)
   nil) 
 

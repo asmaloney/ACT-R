@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : goal.lisp
-;;; Version     : 2.3
+;;; Version     : 3.0
 ;;; 
 ;;; Description : Implementation of the goal module.
 ;;; 
@@ -133,6 +133,18 @@
 ;;;             :   and results in warnings in SBCL.
 ;;; 2021.03.10 Dan [2.3]
 ;;;             : * Set the :do-not-query parameter for goal buffer now.
+;;; 2021.10.20 Dan 
+;;;             : * Check that there is a procedural module before setting the
+;;;             :   :do-not-query and :do-not-harvest parameters.
+;;; 2021.10.28 Dan [3.0]
+;;;             : * Allow goal-focus to take a chunk description, slots and
+;;;             :   values, instead of just a chunk name.  Function requires
+;;;             :   the values passed in a list.
+;;;             : * The remote version requires doing the string conversion
+;;;             :   now since slot values could be strings when a list given.
+;;; 2021.11.30 Dan
+;;;             : * Fixed a problem with the goal-focus macro that happened
+;;;             :   with the change to allow a description.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -165,14 +177,19 @@
 ;;;
 ;;; User Functions:
 ;;;
-;;;   (defmacro goal-focus (&optional (chunk-name nil)))
-;;;   (defun goal-focus-fct (&optional (chunk-name nil)))
+;;;   (defmacro goal-focus (&optional (chunk-name-or-desc nil)))
+;;;   (defun goal-focus-fct (&optional (chunk-name-or-desc nil)))
 ;;; 
-;;;   If the chunk-name is passed in then an event is scheduled to place a copy 
-;;;   of that chunk into the goal buffer at the current time and t is returned.
+;;;   If the chunk-name-or-desc is a symbol that names a chunk then an event is
+;;;   scheduled to place a copy of that chunk into the goal buffer at the
+;;;   current time and chunk name is returned.
 ;;;
-;;;   If no chunk-name is given then the chunk currently in the goal buffer is
-;;;   printed and that chunk's name is returned.
+;;;   If the chunk-name-or-desc is a list of slot-value pairs then an event is
+;;;   scheduled to create a chunk with that description into the goal buffer at
+;;;   the current time and the list is returned.
+
+;;;   If chunk-name-or-desc is not given then the chunk currently in the goal
+;;;   buffer is printed and that chunk's name is returned.
 ;;;
 ;;;   (defmacro mod-focus (&rest modifications)
 ;;;   (defun mod-focus-fct (modifications)
@@ -212,8 +229,8 @@
     (setf (goal-module-delayed instance) nil))
   ; Do NOT strict harvest the goal buffer by default
   ; and don't add explicit queries when requests are made
-  (sgp :do-not-harvest goal :do-not-query goal)
-  
+  (when (get-module procedural t)
+    (sgp :do-not-harvest goal :do-not-query goal))
   )
 
 (defun goal-query (instance buffer-name slot value)
@@ -236,7 +253,7 @@
 
 (define-module-fct 'goal '((goal (:ga 0.0)))
   nil
-  :version "2.3"
+  :version "3.0"
   :documentation "The goal module creates new goals for the goal buffer"
   :creation 'create-goal-module
   :query 'goal-query
@@ -250,57 +267,70 @@
 ;;; just putting them right here
 ;;;
 
-(defmacro goal-focus (&optional (chunk-name nil))
+(defmacro goal-focus (&optional (chunk-name-or-spec nil))
   "Place a chunk into the goal buffer or return either the chunk that is there
    now or the one that will be placed there by a pendng goal-focus"
-  `(goal-focus-fct ',chunk-name))
+  `(goal-focus-fct ',chunk-name-or-spec))
 
-(defun goal-focus-fct (&optional (chunk-name nil))
+(defun goal-focus-fct (&optional (chunk-name-or-spec nil))
   "Place a chunk into the goal buffer or return either the chunk that is there
    now or the one that will be placed there by a pending goal-focus"
     (let ((g-module (get-module goal)))
       (when g-module
-        (if chunk-name
-              (if (chunk-p-fct chunk-name)
+        (if chunk-name-or-spec
+            (if (or (chunk-p-fct chunk-name-or-spec)
+                    (and (listp chunk-name-or-spec)
+                         (define-chunk-spec-fct chunk-name-or-spec nil)))
                   (progn
-                    ;; Should it clear it immediately first?
-                    
-                    (schedule-set-buffer-chunk 'goal chunk-name 0 :time-in-ms t :module 'goal :priority :max :requested nil)
+                    (schedule-set-buffer-chunk 'goal chunk-name-or-spec 0 :time-in-ms t :module 'goal :priority :max :requested nil)
                     (schedule-event-after-module 'goal 'clear-delayed-goal :module 'goal :output nil  
                                                  :destination 'goal :maintenance t)
                     
                     (bt:with-lock-held ((goal-module-lock g-module))
-                      (setf (goal-module-delayed g-module) chunk-name))
-                    chunk-name)
-                ;; This is a serious problem so don't use model-warning
-                (print-warning "~S is not the name of a chunk in the current model - goal-focus failed" chunk-name))
+                      (setf (goal-module-delayed g-module) chunk-name-or-spec))
+                    chunk-name-or-spec)
+              
+              (if (listp chunk-name-or-spec)
+                  (print-warning "~S is not a valid chunk description - goal-focus failed." chunk-name-or-spec)
+                (print-warning "~S is not the name of a chunk in the current model - goal-focus failed" chunk-name-or-spec)))
           
           (let ((chunk (buffer-read 'goal))
-                (delayed   (bt:with-lock-held ((goal-module-lock g-module)) (goal-module-delayed g-module))))
+                (delayed (bt:with-lock-held ((goal-module-lock g-module)) (goal-module-delayed g-module))))
             (cond ((and (null chunk) (null delayed))
                    (command-output "Goal buffer is empty")
                    nil)
                   ((null chunk)
-                   (command-output "Will be a copy of ~a when the model runs" delayed)
-                   (pprint-chunks-fct (list delayed))
-                   delayed)
+                   (if (listp delayed)
+                       (command-output "Will be set to a chunk with this description when model runs:~%~{   ~a ~s~^~%~}" delayed)
+                     (progn
+                       (command-output "Will be a copy of ~a when the model runs" delayed)
+                       (pprint-chunks-fct (list delayed))))
+                     delayed)
                   ((null delayed)
                    (pprint-chunks-fct (list chunk))
                    chunk)
                   (t
-                   (if (eq delayed (chunk-copied-from-fct chunk))
-                       ;; caught it before the delayed chunk was cleared
+                   (if (listp delayed)
+                       ; don't try to compare to current because 
+                       ; maybe it's supposed to match...
                        (progn
+                         (command-output "Will be set to a chunk with this description when model runs:~%~{   ~a ~s~^~%~}" delayed)
+                         delayed)
+                     (if (eq delayed (chunk-copied-from-fct chunk))
+                         ;; caught it before the delayed chunk was cleared
+                         (progn
+                           (pprint-chunks-fct (list chunk))
+                           chunk)
+                       (progn
+                         (command-output "Will be a copy of ~a when the model runs" delayed)
+                         (command-output "Currently holds:")
                          (pprint-chunks-fct (list chunk))
-                         chunk)
-                     (progn
-                       (command-output "Will be a copy of ~a when the model runs" delayed)
-                       (command-output "Currently holds:")
-                       (pprint-chunks-fct (list chunk))
-                       delayed)))))))))
+                         delayed))))))))))
 
 (defun external-goal-focus (&optional (chunk-name nil))
-  (goal-focus-fct (string->name chunk-name)))
+  (if (listp chunk-name)
+      (encode-string-names (goal-focus-fct (decode-string-names chunk-name))) 
+    (goal-focus-fct (string->name chunk-name))))
 
 (add-act-r-command "goal-focus" 'external-goal-focus "Schedule a chunk to enter the goal buffer at the current time or print the current goal buffer chunk. Params: {chunk-name}.")
 
@@ -343,7 +373,7 @@
 
 
 (defun mod-focus-external (&rest modifications)
-  (mod-focus-fct (decode-string-names modifications)))
+  (encode-string-names (mod-focus-fct (decode-string-names modifications))))
 
 (add-act-r-command "mod-focus" 'mod-focus-external "Modify the chunk in the goal buffer using the slots and values provided. Params: '{<slot-name> <new-slot-value>}'*")
 

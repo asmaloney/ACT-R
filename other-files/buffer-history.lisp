@@ -84,6 +84,8 @@
 ;;; 2021.06.07 Dan 
 ;;;             : * Deal with set-buffer-chunk and overwrite-... possibly having
 ;;;             :   a chunk-spec as the second parameter.
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -139,7 +141,7 @@
                               (list bn
                                     (aif (buffer-read bn) (printed-chunk it) "buffer empty")
                                     (printed-buffer-status bn)))
-                      (buffers)))
+                      (model-buffers)))
                   (unless (= (last-time-stamp module) -1)
                     (let ((results nil))
                       (dolist (x (current-data module))

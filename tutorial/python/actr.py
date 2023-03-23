@@ -846,13 +846,13 @@ def pbreak (*params):
 def punbreak (*params):
     return current_connection.evaluate_single("punbreak", *params)
 
-def create_image_for_exp_window(window,text,file,x=0,y=0,width=50,height=50,action=None):
+def create_image_for_exp_window(window,text,file,x=0,y=0,width=50,height=50,action=None,clickable=True):
     return current_connection.evaluate_single("create-image-for-exp-window", window, text, file,
-                                              [['x', x],['y', y],['width', width],['height', height],['action', action]])
+                                              [['x', x],['y', y],['width', width],['height', height],['action', action],['clickable',clickable]])
 
-def add_image_to_exp_window(window,text,file,x=0,y=0,width=50,height=50,action=None):
+def add_image_to_exp_window(window,text,file,x=0,y=0,width=50,height=50,action=None,clickable=True):
     return current_connection.evaluate_single("add-image-to-exp-window", window, text, file,
-                                              [['x', x],['y', y],['width', width],['height', height],['action', action]])
+                                              [['x', x],['y', y],['width', width],['height', height],['action', action],['clickable',clickable]])
 
 def add_items_to_exp_window(window, *items):
     return current_connection.evaluate_single("add-items-to-exp-window",window, *items)

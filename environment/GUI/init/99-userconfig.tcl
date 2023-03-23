@@ -8,3 +8,4 @@ set options_array(use_smart_load) false
 set options_array(save_before_reload) 1
 set options_array(save_backups) 1
 set options_array(sort_lists) 1
+set options_array(edit_warn) 1

@@ -8,7 +8,7 @@
 
 (sgp :seed (100 0))
 
-(chunk-type read-letters location tone state upper-y lower-y)
+(chunk-type read-letters location tone step upper-y lower-y)
 (chunk-type report-row row)
 
 (add-dm
@@ -16,7 +16,7 @@
  (medium isa chunk) 
  (find isa chunk) 
  (encode isa chunk)
- (goal isa read-letters state attending upper-y 400 lower-y 600))
+ (goal isa read-letters step attending upper-y 400 lower-y 600))
 
 (p detected-sound
    =aural-location>
@@ -68,7 +68,7 @@
 (p attend-low
    =goal>
      isa        read-letters
-     state      attending
+     step       attending
    =visual-location>
      isa        visual-location
    > screen-y   500
@@ -79,7 +79,7 @@
    ==>
    =goal>
      location   low
-     state      encode
+     step       encode
    +visual>
      cmd        move-attention
      screen-pos =visual-location)
@@ -87,7 +87,7 @@
 (p attend-medium
    =goal>
      isa        read-letters
-     state      attending
+     step       attending
    =visual-location>
      isa        visual-location
    > screen-y   450
@@ -98,7 +98,7 @@
 ==>
    =goal>
      location   medium
-     state      encode
+     step       encode
    +visual>
      cmd        move-attention
      screen-pos =visual-location)
@@ -106,7 +106,7 @@
 (p attend-high
    =goal>
      isa        read-letters
-     state      attending
+     step       attending
    =visual-location>
      isa        visual-location
    > screen-y   400
@@ -117,7 +117,7 @@
 ==>
    =goal>
      location   high
-     state      encode
+     step       encode
    +visual>
      cmd        move-attention
      screen-pos =visual-location)
@@ -135,7 +135,7 @@
    -visual>
    =goal>
      location  nil
-     state     attending
+     step      attending
    +visual-location>
      :attended nil
    > screen-y  =uy 

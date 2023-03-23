@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : production-compilation.lisp
-;;; Version     : 5.0
+;;; Version     : 6.0
 ;;; 
 ;;; Description : Implements the production compilation mechnaism in ACT-R 6.
 ;;; 
@@ -575,6 +575,11 @@
 ;;;             : * When composing the buffer= and buffer+ actions need to 
 ;;;             :   exclude dynamic p1 slots whose instantiation is overridden
 ;;;             :   with something in p2 (which may also have been dynamic).
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead in reset
+;;;             :   function (other calls need to refer to all buffers).
+;;; 2021.10.19 Dan [6.0]
+;;;             : * Set the :required flag on the module to procedural.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -1030,7 +1035,7 @@
     (setf (compilation-module-drop-out-buffers instance) nil)
       
     (bt:with-lock-held (*compilation-lock*)
-      (dolist (buffer (buffers))
+      (dolist (buffer (model-buffers))
         (let* ((var-name (intern (concatenate 'string "=" (string buffer))))
                (standard (gethash buffer *buffer-to-compilation-type-table*))
                (type (or (and standard (gethash standard *valid-compilation-buffer-types*))
@@ -1092,11 +1097,12 @@
         (define-parameter :tt :default-value 2.0
           :valid-test 'posnum :warning "a positive number"
           :documentation "Threshold time"))
-  :version "5.0"
+  :version "6.0"
   :documentation "A module that assists the primary procedural module with compiling productions"
   :creation 'create-composition-module
   :reset (list 'reset-production-compilation 'reset-production-compilation2)
-  :params 'production-compilation-params)
+  :params 'production-compilation-params
+  :required 'procedural)
 
 
 (defun create-production-signature (production)

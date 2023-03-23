@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : history-recorder.lisp
-;;; Version     : 2.1
+;;; Version     : 2.2
 ;;; 
 ;;; Description : General history data recording mechanisms based on those which
 ;;;             : were used for the Environment tools previously.
@@ -173,6 +173,8 @@
 ;;;             :   Lisp format and don't want to generate incompatible files.
 ;;; 2020.01.13 Dan [2.1]
 ;;;             : * Removed the #' and lambdas from the module interface. 
+;;; 2022.03.10 Dan [2.2]
+;;;             : * Make this a required module.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -753,7 +755,8 @@
 (define-module-fct :history-recorder nil nil
   :creation 'create-history-recorder-module
   :reset '(nil nil reset-history-recorder)
-  :version "2.1"
+  :required t
+  :version "2.2"
   :documentation "Module to support the saving and accessing of information as a model runs.")
 
 

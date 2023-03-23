@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : blending.lisp
-;;; Version     : 4.5
+;;; Version     : 5.0
 ;;; 
 ;;; Description : Base module code to handle blended retrieval requests.
 ;;; 
@@ -225,6 +225,12 @@
 ;;; 2021.06.09 Dan [4.5]
 ;;;             : * Don't need create-new-buffer-chunk because the spec can
 ;;;             :   be sent directly.
+;;; 2022.04.06 Dan [5.0]
+;;;             : * Allow mag->value to be used when value->mag is identity
+;;;             :   so that one can scale/round/adjust/etc the result without
+;;;             :   having to first adjust the initial values.
+;;;             : * Pass a chunk-spec-id to the mag->value function so that it
+;;;             :   can be used remotely.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -697,8 +703,12 @@
                                                     (blending-item-name mag) (blending-item-prob mag) it increment sum)))))
                          
                          (cond ((and (blending-module-m->v instance)
-                                     (not (equalp slot-vals mags)))
-                                (let ((result (dispatch-apply (blending-module-m->v instance) sum request)))
+                                     (or (eq (blending-module-v->m instance) 'identity)
+                                         (not (equalp slot-vals mags))))
+                                (let* ((id (chunk-spec-to-id request))
+                                       (result (dispatch-apply (blending-module-m->v instance) sum id)))
+                                  
+                                  (release-chunk-spec-id id)
                                   (setf (cdr (assoc slot blended-results)) result)
                                   
                                   (when (blending-module-sblt instance)
@@ -796,8 +806,12 @@
                                      (setf best-val val)))))
                              
                              (cond ((and (blending-module-m->v instance)
-                                         (not (equalp slot-vals mags)))
-                                    (let ((result (dispatch-apply (blending-module-m->v instance) best-val request)))
+                                     (or (eq (blending-module-v->m instance) 'identity)
+                                         (not (equalp slot-vals mags))))
+                                    (let* ((id (chunk-spec-to-id request))
+                                           (result (dispatch-apply (blending-module-m->v instance) best-val id)))
+                                  
+                                      (release-chunk-spec-id id)
                                       (setf (cdr (assoc slot blended-results)) result)
                                       
                                       (when (blending-module-sblt instance)

@@ -465,6 +465,11 @@
 ;;;             :   chunk that it will use, and a flag to indicate if it should
 ;;;             :   use it.
 ;;;             : * Chunk struct has a slot to indicate not storable.
+;;; 2021.10.14 Dan [6.0]
+;;;             : * Added a new slot to modules to indicate whether they are
+;;;             :   required to exist or not.
+;;;             : * Also added a slot to models for the parameters it has since
+;;;             :   it will only have parameters for the used modules.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -753,6 +758,7 @@
   starting-distinct-types
   
   initial-chunks
+  params
   )
 
 (defvar *current-act-r-model* nil)
@@ -789,7 +795,7 @@
   name buffers version documentation creation reset query
   request buffer-mod params delete notify-on-clear update
   secondary-reset tertiary-reset warn search offset run-notify run-over-notify
-  external)
+  external required)
 
 (defstruct act-r-parameter 
   "The internal structure of a parameter"

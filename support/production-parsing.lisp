@@ -306,6 +306,8 @@
 ;;;             :   creating a dummy chunk to use since that's valid now.
 ;;;             : * If a buffer variable is used in the production then that
 ;;;             :   buffer must continue to copy chunks.
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -400,7 +402,7 @@
       (setf (production-documentation production) (pop definition)))
     
     (aif (position '==> definition)
-         (let* ((buffers (buffers))
+         (let* ((buffers (model-buffers))
                 (pre-lhs (parse-conditions prod (production-name production) (subseq definition 0 it) buffers))
                 (lhs (if (eq :error pre-lhs) :error (sort-for-binding pre-lhs)))
                 (rhs (unless (eq lhs :error)

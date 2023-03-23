@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : device-interface.lisp
-;;; Version     : 7.2
+;;; Version     : 7.3
 ;;; 
 ;;; Description : File for managing the device interface.
 ;;; 
@@ -399,6 +399,10 @@
 ;;; 2020.01.10 Dan [7.2]
 ;;;             : * Removed the #' and lambdas from the module interface functions
 ;;;             :   since that's not allowed in the general system now.
+;;; 2021.10.19 Dan [7.3]
+;;;             : * Set the required flag for the module to a list of :motor, 
+;;;             :   :vision, and :speech, but it may be needed at other times
+;;;             :   since it handles all devices.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -417,7 +421,7 @@
    (mouse-fitts-coeff :accessor mouse-fitts-coeff :initform 0.1)
    (show-focus-p :accessor show-focus-p :initarg :show-focus-p :initform nil)
    (needs-mouse-p :accessor needs-mouse-p :initarg :needs-mouse-p :initform t)
-   (version-string :accessor version-string :initarg :version-string :initform "7.2")
+   (version-string :accessor version-string :initarg :version-string :initform "7.3")
    (stable-names :accessor stable-names :initarg :stable-names :initform t)
    (param-lock :accessor device-param-lock :initform (bt:make-lock "device-param"))
    (device-tables-lock :accessor device-tables-lock :initform (bt:make-lock "device-tables") :allocation :class)
@@ -923,7 +927,8 @@
   :creation 'create-device-module
   :reset 'reset-device
   :delete 'delete-device
-  :params 'params-device-module)
+  :params 'params-device-module
+  :required (list :motor :vision :speech))
 
 
 #|

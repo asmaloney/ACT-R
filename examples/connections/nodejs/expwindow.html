@@ -19,6 +19,14 @@
 
   <script src="/socket.io/socket.io.js"></script>
 
+  <!--  For the mybinder and jupyter versions use this instead: src="socket.io/socket.io.js" -->
+
+  <script> // set this so the right path info is used later
+
+   var which_interface = 1; // 1 is normal, 2 is mybinder, 3 is jupyter, 4 is play-with-docker
+
+  </script> 
+
   <script>
    var c = document.getElementById("canvas");
    var canvas = c.getContext("2d");
@@ -83,7 +91,25 @@
     canvas.stroke(cursor);
    }
 
-   var socket = io('/expwindow');
+   if (which_interface == 1 || which_interface == 4) {
+      var socket = io('/expwindow');
+   } else if (which_interface == 2) {
+
+     var address = document.baseURI ;
+   
+     var socket = io('/expwindow', {
+      path: address.slice(address.indexOf('/user'),address.indexOf('expwindow'))+"socket.io"
+     });
+
+   } else {
+   
+     var address = document.baseURI ;
+    
+     var socket = io('/expwindow', {
+      path: "/proxy/4000/socket.io"
+     });
+   }
+
    var items = {};
    var attn = {};
 

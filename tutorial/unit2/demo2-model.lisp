@@ -7,29 +7,29 @@
 (sgp :seed (123456 0))
 (sgp :v t :show-focus t :trace-detail high)
   
-(chunk-type read-letters state)
+(chunk-type read-letters step)
 (chunk-type array letter)
 
 (add-dm 
  (start isa chunk) (attend isa chunk)
  (respond isa chunk) (done isa chunk)
- (goal isa read-letters state start))
+ (goal isa read-letters step start))
 
 (P find-unattended-letter
    =goal>
       ISA         read-letters
-      state       start
+      step        start
  ==>
    +visual-location>
       :attended    nil
    =goal>
-      state       find-location
+      step        find-location
 )
 
 (P attend-letter
    =goal>
       ISA         read-letters
-      state       find-location
+      step        find-location
    =visual-location>
    ?visual>
       state       free
@@ -38,20 +38,20 @@
       cmd         move-attention
       screen-pos  =visual-location
    =goal>
-      state       attend
+      step        attend
 )
 
 (P encode-letter
    =goal>
       ISA         read-letters
-      state       attend
+      step        attend
    =visual>
       value       =letter
    ?imaginal>
       state       free
 ==>
    =goal>
-      state       respond
+      step        respond
    +imaginal>
       isa         array
       letter      =letter
@@ -61,7 +61,7 @@
 (P respond
    =goal>
       ISA         read-letters
-      state       respond
+      step        respond
    =imaginal>
       isa         array
       letter      =letter
@@ -69,7 +69,7 @@
       state       free
 ==>
    =goal>
-      state       done
+      step        done
    +manual>
       cmd         press-key
       key         =letter

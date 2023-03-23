@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : new-threads.lisp
-;;; Version     : 2.4
+;;; Version     : 2.5
 ;;; 
 ;;; Description : Reimplementation of the threaded cognition module using
 ;;;             : the new searchable multi-buffer capability.
@@ -47,6 +47,10 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2021.10.20 Dan [2.5]
+;;;             : * Check whether there is a procedural module before trying to
+;;;             :   set the :do-not-harvest parameter.
+;;;             : * Also set the :do-not-query parameter now.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -145,8 +149,10 @@
     (setf (tgm-chunk-set instance) nil)
     (setf (tgm-update instance) nil))
   
-  ; Do NOT strict harvest the goal buffer by default
-  (sgp :do-not-harvest goal))
+  ; Do NOT strict harvest or query the goal buffer by default
+  (when (get-module procedural t)
+    (sgp :do-not-harvest goal :do-not-query goal))
+  )
 
 
 ;;; If a chunk is cleared from the goal buffer then it needs to be removed
@@ -224,7 +230,7 @@
 
 (define-module-fct 'goal '((goal (:ga 1.0) nil nil nil :search))
   nil
-  :version "2.4"
+  :version "2.5"
   :documentation "Threaded cognition version of the goal module"
   :creation 'create-threaded-goal-module
   :reset (list nil 'threaded-goal-reset)

@@ -8,7 +8,7 @@
      :visual-num-finsts 10 
      :visual-finst-span 10)
 
-(chunk-type count count state)
+(chunk-type count count step)
 (chunk-type number number next vocal-rep)
 
 (add-dm (zero isa number number zero next one vocal-rep "zero")
@@ -23,7 +23,7 @@
         (nine isa number number nine next ten vocal-rep "nine")
         (ten isa number number ten next eleven vocal-rep "ten")
         (eleven isa number number eleven)
-        (goal isa count state start)
+        (goal isa count step start)
         (start))
 
 

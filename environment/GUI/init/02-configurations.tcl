@@ -123,6 +123,11 @@ set window_config(.options) \
 set window_config(.dispatcher) \
     "700x274+[expr $screen_center_x - 350]+[expr $screen_center_y - 137]"
 
+set window_config(.tutor_r) \
+    "496x636+[expr $screen_center_x - 248]+[expr $screen_center_y - 318]"
+
+set window_config(.tutor_cr) \
+    "554x646+[expr $screen_center_x - 277]+[expr $screen_center_y - 323]"
 
 set window_config(.model) \
     "400x500+0+20"

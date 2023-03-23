@@ -276,6 +276,9 @@
 ;;;             : * Switch from defconstant to the define-constant macro to 
 ;;;             :   avoid issues with SBCL (instead of redefining defconstant
 ;;;             :   for SBCL as was done previously).
+;;; 2021.10.19 Dan
+;;;             : * Changed the declaim for get-module-fct since it has an
+;;;             :   optional now.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -302,7 +305,7 @@
 #-(or (not :clean-actr) :packaged-actr :ALLEGRO-IDE) (in-package :cl-user)
 
 
-(declaim (ftype (function (t) (values t t)) get-module-fct))
+(declaim (ftype (function (t &optional t) (values t t)) get-module-fct))
 (declaim (ftype (function () t) current-model))
 (declaim (ftype (function (t) (values t t)) get-chunk))
 (declaim (ftype (function (&optional t) (values t t t)) new-name-fct))

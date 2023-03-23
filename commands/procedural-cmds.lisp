@@ -396,6 +396,8 @@
 ;;;             :   productions not in the matching buffer set didn't have their
 ;;;             :   failure-condition cleared or set.  Now, it sets the ones
 ;;;             :   that aren't in the buffer set to indicate that.
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -790,7 +792,7 @@
 (defun declare-buffer-usage-fct (buffer type &optional slots)
   (let ((procedural (get-module procedural)))
     (if procedural
-        (cond ((not (find buffer (buffers)))
+        (cond ((not (find buffer (model-buffers)))
                (print-warning "Cannot declare usage for ~S because it does not name a buffer in the model." buffer))
               ((not (chunk-type-p-fct type))
                (print-warning "Cannot declare usage for buffer ~s because ~s does not name a chunk-type in the model." buffer type))

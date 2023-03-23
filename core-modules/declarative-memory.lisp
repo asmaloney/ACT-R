@@ -513,6 +513,8 @@
 ;;; 2021.06.04 Dan [7.0]
 ;;;             : * When merging chunks from a buffer need to check if it's
 ;;;             :   storable or not if it's being added as a new chunk.
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -2382,7 +2384,7 @@ of operation is more important.
                 
                 (t
                  (let ((total-spread 0.0))
-                   (dolist (buffer (buffers))
+                   (dolist (buffer (model-buffers))
                      (let ((buffer-chunk (buffer-read buffer))
                            (spread (buffer-spread buffer)))
                        (when (and buffer-chunk (not (zerop spread)))

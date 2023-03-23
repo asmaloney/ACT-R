@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : naming-module.lisp
-;;; Version     : 2.1
+;;; Version     : 3.0
 ;;; 
 ;;; Description : Module that supports model-specific and "safe" gentemping for
 ;;;               name creation.
@@ -135,6 +135,8 @@
 ;;;             : * Switch from defconstant to the define-constant macro to 
 ;;;             :   avoid issues with SBCL (instead of redefining defconstant
 ;;;             :   for SBCL as was done previously).
+;;; 2021.10.19 Dan [3.0]
+;;;             : * Set the :required flag on the module.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -313,13 +315,13 @@
      :warning "T or nil" 
      :documentation "Flag to signal how copied chunks are named"))
   
-  :version "2.1"
+  :version "3.0"
   :documentation "Provides safe and repeatable new name generation for models."
   :params 'params-naming-module
   :creation 'create-naming-module
   :reset 'reset-naming-module
   :delete 'reset-naming-module
-  )
+  :required t)
 
 
 

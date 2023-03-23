@@ -68,6 +68,8 @@
 ;;; 2019.03.21 Dan [3.1a]
 ;;;             : * Updating because of changes in the internal representations of
 ;;;             :   chunks and chunk-types.
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -402,7 +404,7 @@ PROCEDURAL module
           ;;; If there's a chunk in a buffer create that chunk and put it into
           ;;; the buffer, using goal-focus for the goal buffer.
           
-          (dolist (buffer (buffers))
+          (dolist (buffer (model-buffers))
             (awhen (buffer-read buffer)
                    (command-output "")
                    (command-output "")

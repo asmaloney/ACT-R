@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : dispatcher.lisp
-;;; Version     : 5.1
+;;; Version     : 5.2
 ;;; 
 ;;; Description : 
 ;;; 
@@ -566,6 +566,19 @@
 ;;; 2021.05.11 Dan
 ;;;             : * Changed reference to GUI directory to gui to avoid issues
 ;;;             :   with logical pathnames (particularlly in SBCL).
+;;; 2021.09.23 Dan
+;;;             : * Encode-string and encode-string-names now use concatenate
+;;;             :   instead of format to improve performance.
+;;; 2021.09.24 Dan
+;;;             : * Added a remote version of written-for-act-r-version.
+;;; 2021.10.01 Dan
+;;;             : * Can't add written-for... here since it's defined in the 
+;;;             :   loader after this gets loaded.
+;;; 2021.10.13 Dan [5.2]
+;;;             : * Print warnings for any errors encountered during the
+;;;             :   evaluation of monitoring commands.  Previously, those were
+;;;             :   ignored since they were already handled, but that evaluation
+;;;             :   just returns the handled errors without displaying anything.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -817,7 +830,7 @@
 
 (defun encode-string (s)
   (if (stringp s)
-      (format nil "'~a'" s)
+      (concatenate 'string "'" s "'")
     s))
 
 (defvar *hide-warnings-stream* (make-string-output-stream))
@@ -991,19 +1004,27 @@
                       (bt:acquire-lock (dispatch-command-lock c) t)))
                   
                   (dolist (x before)
-                    (evaluate-command action x (list (dispatch-command-name c) parameters nil nil)))
+                    (let ((r (multiple-value-list (evaluate-command action x (list (dispatch-command-name c) parameters nil nil)))))
+                      (unless (first r)
+                        (print-warning "Error while calling ~s as a before monitor for ~s: ~a"
+                                       (dispatch-command-name x) (dispatch-command-name c) (second r)))))
             
                   (let ((result (if (dispatch-command-underlying-function c) 
                                     (multiple-value-list (evaluate-command action c parameters)) 
                                   (list t t))))
               
                     (dolist (x after)
-                      (evaluate-command action x (list (dispatch-command-name c) parameters (if (car result) t nil)
-                                                       (if (car result) (cdr result) nil))))
+                      (let ((r (multiple-value-list (evaluate-command action x (list (dispatch-command-name c) parameters (if (car result) t nil)
+                                                       (if (car result) (cdr result) nil))))))
+                        (unless (first r)
+                          (print-warning "Error while calling ~s as an after monitor for ~s: ~a"
+                                       (dispatch-command-name x) (dispatch-command-name c) (second r)))))
               
                     (dolist (x simple)
-                      (evaluate-command action x parameters))
-                
+                      (let ((r (multiple-value-list (evaluate-command action x parameters))))
+                        (unless (first r)
+                          (print-warning "Error while calling ~s as a monitor for ~s: ~a"
+                                         (dispatch-command-name x) (dispatch-command-name c) (second r)))))
                     result))
           
               (when (dispatch-command-single-instance c)
@@ -2095,7 +2116,7 @@
         ((or (symbolp sn) (numberp sn))
          sn)
         ((stringp sn)
-         (format nil "'~a'" sn))
+         (concatenate 'string "'" sn "'"))
         ((listp sn)
          (mapcar 'encode-string-names sn))
         (t
@@ -2295,7 +2316,6 @@
   *actr-version-string*)
 
 (add-act-r-command "act-r-version" 'act-r-version-string "Returns the current ACT-R version string. No params." nil)
-
 
 ;;; Actually echo the output by default now if it's not the standalone.
 

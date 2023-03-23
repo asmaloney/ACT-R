@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : tracker.lisp
-;;; Version     : 6.0
+;;; Version     : 7.0
 ;;; 
 ;;; Description : Module to create "trackers" which can learn a mapping of values
 ;;;             : in monitored slots for "good" and/or "bad" events to an output
@@ -185,6 +185,21 @@
 ;;; 2021.06.07 Dan [6.0]
 ;;;             : * Also monitor for overwrite-buffer-chunk in addition to
 ;;;             :   set-buffer-chunk and mod-buffer-chunk actions.
+;;; 2021.10.18 Dan
+;;;             : * Changed call to buffers to model-buffers instead.
+;;; 2021.12.01 Dan [7.0]
+;;;             : * Added the ability to specify values to bias the initial
+;;;             :   statistics with x-bias and y-bias slots in the request.
+;;;             :   If x-bias is not provided it defaults to the list of 
+;;;             :   choices.  The x and y values are treated as occurrences of
+;;;             :   good values (all weighted equally as if they took 1 second)
+;;;             :   to create the initial quatratic equation.
+;;; 2021.12.02 Dan
+;;;             : * If the result is a number, have the tracker stats print
+;;;             :   it as a floating point instead of rational.
+;;; 2022.01.06 Dan
+;;;             : * Also print the equation in output-tracker-stats with floats
+;;;             :   instead of rationals.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -228,13 +243,15 @@
 ;;;    TEMP
 ;;;    SCALE
 ;;;    DELAY
+;;;    X-BIAS
+;;;    Y-BIAS
 ;;;
 ;;; It must include a control-slot (which is unique among all the trackers
 ;;; which have been created) and at least one of good-slot or bad-slot (it
 ;;; may specify both).  All of the other values are optional and have default
 ;;; values which are set with parameters for the module except for name 
 ;;; which if not provided will be set to a unique value among the current
-;;; trackers.
+;;; trackers and the bias values which default to no bias.
 ;;;
 ;;; For each tracker created a chunk is added to the tracker buffer, and the 
 ;;; best way to access that in a production is by using the control-slot
@@ -368,6 +385,8 @@
   update-event
   params ;; params are c,b,a for c + bx + ax^2
   result
+  x-bias
+  y-bias
   )
   
 
@@ -398,7 +417,7 @@
   (declare (ignore model-name))
   
   (chunk-type tracker-params control-scale good-slot bad-slot good-weight bad-weight 
-              good-scale bad-scale min max control-count temp scale delay)
+              good-scale bad-scale min max control-count temp scale delay x-bias y-bias)
   
   (chunk-type tracker-modification control-scale good-slot bad-slot good-weight bad-weight 
               good-scale bad-scale min max control-count delay)
@@ -507,11 +526,41 @@
     (push-last val choices)))
 
 ;convert choices into an initial set of experiences
-(defun tracker-prior-statistics (choices)
+(defun tracker-prior-statistics (choices x-bias y-bias)
+  
   (let ((statistics (list 0 0 0 0 0)))
+    
     (dolist (val choices)
       (setf statistics (mapcar '+ statistics (list 1 val (* val val) (* val val val) (* val val val val)))))
-    (append statistics (list 0 0 0 0 0 0))))
+    
+    (setf statistics (append statistics (list 0 0 0 0 0 0)))
+  
+    (cond ((and x-bias y-bias)
+           (if (and (listp x-bias) (listp y-bias) (= (length x-bias) (length y-bias))
+                    (every 'numberp x-bias) (every 'numberp y-bias))
+               (list (length x-bias) 
+                     (reduce '+ x-bias) (reduce '+ (mapcar '* x-bias x-bias)) (reduce '+ (mapcar '* x-bias x-bias x-bias)) (reduce '+ (mapcar '* x-bias x-bias x-bias x-bias)) 
+                     (reduce '+ y-bias) (reduce '+ (mapcar '* x-bias y-bias)) (reduce '+ (mapcar '* x-bias x-bias y-bias)) 
+                     0 0 0)
+             (prog1 
+                 statistics
+               (print-warning "Invalid bias values provided. Must be equal lenght lists of numbers but given x-bias: ~s y-bias: ~s" x-bias y-bias))))
+          (y-bias
+           (if (and (listp y-bias) (<= (length y-bias) (length choices))
+                    (every 'numberp y-bias))
+               (let ((x-bias choices))
+                 (list (length x-bias) 
+                       (reduce '+ x-bias) (reduce '+ (mapcar '* x-bias x-bias)) (reduce '+ (mapcar '* x-bias x-bias x-bias)) (reduce '+ (mapcar '* x-bias x-bias x-bias x-bias)) 
+                       (reduce '+ y-bias) (reduce '+ (mapcar '* x-bias y-bias)) (reduce '+ (mapcar '* x-bias x-bias y-bias)) 
+                       0 0 0))
+             (prog1 
+                 statistics
+               (print-warning "Invalid y-bias value provided. Must be a list of numbers no longer than the number of choices but given ~s" y-bias))))
+          (x-bias
+           (print-warning "Invalid bias values provided. Only x-bias given but y-bias is required when x-bias is specified.")
+           statistics)
+          (t
+           statistics))))
 
 (defun tracker-update-time (delay)
   (handler-case  (min 60 (max 1 (- (* (log (act-r-random 1.0)) delay))))
@@ -712,7 +761,7 @@
                                                                            (* x (/ weight cn)))
                                                                    (tracker-statistics existing))))
                                                               ((eq weight :new)
-                                                               (tracker-prior-statistics (tracker-choices existing)))
+                                                               (tracker-prior-statistics (tracker-choices existing) (tracker-x-bias existing) (tracker-y-bias existing)))
                                                               (t
                                                                (tracker-statistics existing)))
                                             :min (tracker-min existing)
@@ -735,6 +784,8 @@
                                                              (tracker-active-time existing)
                                                            0)
                                             :chunk chunk
+                                            :x-bias (tracker-x-bias existing)
+                                            :y-bias (tracker-y-bias existing)
                                             :good-buffer (tracker-good-buffer existing)
                                             :good-slot (tracker-good-slot existing)
                                             :good-weight (tracker-good-weight existing)
@@ -745,7 +796,9 @@
                                             :bad-weight (tracker-bad-weight existing)
                                             :bad-scale (tracker-bad-scale existing)
                                             :bad-value 0)) ; don't want unhandled experience (tracker-bad-value existing)))
-                                  (setting (tracker-genQuadValue module tracker)))
+                                  (setting (progn 
+                                             (when (tracker-y-bias tracker) (tracker-calc-quad tracker))
+                                             (tracker-genQuadValue module tracker))))
                              
                              (push tracker (trackers module)) ;; need it on the list so that the scale
                                                               ;; hook can get the info if needed
@@ -822,7 +875,9 @@
                      (max (tracker-request-checker chunk-spec 'max (default-max module)))
                      (control-count (tracker-request-checker chunk-spec 'control-count (default-count module)))
                      (temp (tracker-request-checker chunk-spec 'temp (initial-temp module)))
-                     (scale (tracker-request-checker chunk-spec 'scale (temp-scale module))))
+                     (scale (tracker-request-checker chunk-spec 'scale (temp-scale module)))
+                     (x-bias (tracker-request-checker chunk-spec 'x-bias nil))
+                     (y-bias (tracker-request-checker chunk-spec 'y-bias nil)))
                   
                  (cond ((null control-buffer)
                         (failure "control-buffer not specified."))
@@ -895,7 +950,7 @@
                                          :control-slot control-slot
                                          :control-scale control-scale
                                          :choices choices
-                                         :statistics (tracker-prior-statistics choices)
+                                         :statistics (tracker-prior-statistics choices x-bias y-bias)
                                          :min min
                                          :max max
                                          :params params
@@ -918,8 +973,12 @@
                                                      bad-slot)
                                          :bad-weight bad-weight
                                          :bad-scale (when (and bad-buffer bad-slot)
-                                                      bad-scale)))
-                               (setting (tracker-genQuadValue module tracker)))
+                                                      bad-scale)
+                                         :x-bias x-bias
+                                         :y-bias y-bias))
+                               (setting (progn 
+                                          (when (tracker-y-bias tracker) (tracker-calc-quad tracker))
+                                          (tracker-genQuadValue module tracker))))
                           
                           (push tracker (trackers module)) ;; need it on the list so that the scale
                                                            ;; hook can get the info if needed
@@ -1088,7 +1147,7 @@
 
 
 (defun tracker-check-buffer-valid (name)
-  (find name (buffers)))
+  (find name (model-buffers)))
 
 (defun control-count-value-test (x)
   (and (posnum x) (integerp x)))
@@ -1131,7 +1190,7 @@
   :request 'request-tracker
   :delete 'delete-tracker
   :query 'tracker-query
-  :version "6.0"
+  :version "7.0"
   :documentation "Module which can learn an outcome value based on one or two events monitored in buffer slots.")
 
 (defun updated-tracker-value (module tracker buffer slot value scale which)
@@ -1270,6 +1329,9 @@
                                        :details "Clean-up unneeded chunk" :maintenance t))))))))
 
 
+
+
+
 (defun tracker-update-stats (module tracker &optional skip)
   (let* ((old-stats (tracker-statistics tracker))
          (weight  (max .05 (ms->seconds (- (mp-time-ms) (tracker-last-update tracker)))))
@@ -1377,7 +1439,7 @@
   (when (and (tracker-bad-buffer tracker) (tracker-bad-slot tracker))
     (command-output " Bad slot is ~s in buffer ~s with weight ~s" (tracker-bad-slot tracker) (tracker-bad-buffer tracker) (tracker-bad-weight tracker)))
   (command-output "  Current temperature is: ~f" (tracker-temperature tracker))
-  (command-output "  Current equation is: ~s + ~sx + ~sx^2" (first (tracker-params tracker)) (second (tracker-params tracker)) (third (tracker-params tracker)))
+  (command-output "  Current equation is: ~6,3f + ~6,3fx + ~6,3fx^2" (first (tracker-params tracker)) (second (tracker-params tracker)) (third (tracker-params tracker)))
   
   (let* ((params (tracker-params tracker))
          (choices (tracker-choices tracker))
@@ -1393,7 +1455,11 @@
   
   (let* ((setting (tracker-setting tracker))
          (result (tracker-result tracker)))
-    (command-output "  Current setting is: ~s" setting)
+    
+    (if (numberp setting)
+        (command-output "  Current setting is: ~f" setting)
+      (command-output "  Current setting is: ~s" setting))
+
     (unless (equalp setting result)
       (command-output "  Scaled to result: ~s by scale: ~s" result (tracker-control-scale tracker))))
   (tracker-params tracker))

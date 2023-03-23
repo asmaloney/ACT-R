@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : modules.lisp
-;;; Version     : 3.2
+;;; Version     : 4.1
 ;;; 
 ;;; Description : Code for defining and using the modules.
 ;;; 
@@ -222,6 +222,43 @@
 ;;; 2020.09.11 Dan 
 ;;;             : * Deleted a needed function for check-module-version before
 ;;;             :   I committed the last one.
+;;; 2021.10.15 Dan [4.0]
+;;;             : * Added the use-modules command that when called without a
+;;;             :   model defined limits the modules that will be used until the
+;;;             :   next clear-all call, and clear-used-modules for use in
+;;;             :   clear-all to keep from needing to use the global elsewhere.
+;;;             : * Added the required parameter to define-module which if set
+;;;             :   means the module will be used even if not specified in a
+;;;             :   call to use-modules.
+;;; 2021.10.18 Dan
+;;;             : * Change process-parameters because it's always called with a
+;;;             :   current model so don't use the general get-module code and
+;;;             :   don't print warnings if the module doesn't exist when the
+;;;             :   third parameter is nil.
+;;; 2021.10.19 Dan
+;;;             : * Test the :required value of a module for being t, module, or
+;;;             :   a list of modules so that a module can be required when any
+;;;             :   of the indicated modules are also required (saves having to
+;;;             :   specify all modules explicitly for something like procedural
+;;;             :   but the cost is that it always uses the related modules).
+;;;             : * Added an optional parameter to get-module that suppresses
+;;;             :   the warning if provided, and use that in the notify
+;;;             :   functions which only warn if both the instance and abstract
+;;;             :   are unavailable.
+;;;             : * Fixed the external get-module since the abstract module 
+;;;             :   can't be encoded, but presumably the module that one wants
+;;;             :   to get can be...
+;;; 2021.10.22 Dan
+;;;             : * Get-module should return only t/nil as the second parameter
+;;;             :   to indicate existence.  Use a different version in this code
+;;;             :   to get both the instance and the abstract module.
+;;; 2022.03.09 Dan [4.1]
+;;;             : * Adding a :requires parameter to define-module because it
+;;;             :   makes more sense for a module to specify the other modules
+;;;             :   that it requires instead of the other module knowing which
+;;;             :   modules need it.  Leaving :required however because setting
+;;;             :   that to t is useful and no need to break things that are
+;;;             :   already in place.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -235,132 +272,39 @@
 ;;;
 ;;; define-module
 ;;; 
-;;; (defmacro define-module (module-name buffer-list 
-;;;                          &key (version "Unspecified") (documentation "")
-;;;                               (creation nil) (reset nil) (query nil)
-;;;                               (request nil) (buffer-mod nil) (params nil) 
-;;;                               (init-params nil) (delete nil) 
-;;;                               (notify-on-clear nil)))
-;;;                                                       
-;;; module-name a symbol that will name the module
-;;; buffer-list a list of the buffer name specifications that this module will use
-;;; version a string that can be used for version control and bug tracking
-;;; documentation a string that describes the module
-;;; creation a function, function name or nil
-;;; reset a function, function name or nil 
-;;; query a function, function name or nil 
-;;; request a function, function name or nil 
-;;; buffer-mod a function, function name or nil 
-;;; init-params a function, function name or nil 
-;;; params a function, function name or nil 
-;;; delete a function, function name or nil 
-;;; notify-on-clear a function, function name or nil
-;;; 
-;;; define-module creates a new module for the system which will be referenced by module-name and provides the buffers named in buffer-list as an interface.  The operation of the module is controlled by the remaining parameters which are described in detail below.  If a module is successfully defined, then module-name is returned.
-;;; 
-;;; If there is already a module named module-name or buffers with any of the names in buffer-list then a warning is displayed, no module is created and nil is returned.
-;;; 
-;;; An element of the buffer-list can be a symbol that names the buffer or a list with additional details about the buffer.  If it is a list, then the first element must be a symbol that names the buffer, the second element describes the spreading activation parameter for the buffer, the third specifies any request parameters and the fourth any query parameters.  
-;;; 
-;;; The spreading activation description can be a keyword that specifies the parameter to use in setting the activation spreading from the buffer (the default parameter name will be :buffer-activation where buffer  is the name of the buffer) or a list of the keyword that specifies the parameter and a default value for the activation parameter (the default default value is 0 and should be left there) or nil if the default values should be used for both (necessary if the third or fourth elements for the buffer details are needed).
-;;; 
-;;; The request parameters specification is a list of the keywords that can be used in any request for this buffer regardless of the chunk-type used in the request.
-;;; 
-;;; The query parameters specification is a list of symbols (not keywords) which can be used as the slot names for a query request.
-;;; 
-;;; 
-;;; version should be set to a string that indicates in some fashion a version for this module.  Every module should have a version and every update to the module should change that version.  This will be displayed when the mp-print-versions command is called.
-;;; 
-;;; documentation should be a string that contains some brief documentation about the purpose of the module. This will also be displayed when the mp-print-versions command is called.
-;;; 
-;;; The remainder of the parameters (creation, reset, state, request, buffer-mod, params, delete, and notify-on-clear) are for specifying the functions that interface the module to the framework.  Those functions will be called by the framework as necessary.  The situations in which they will be called and the parameters that will be passed to them are described below.  All of the functions are optional, and by leaving the corresponding parameter as nil, the module will not be called for that particular situation.
-;;; 
-;;; creation
-;;;  
-;;; The creation function will be called only once per instantiation of the module, when a model is first created.  The creation function will be passed one parameter which will be the name of the model in which the module is currently being instantiated.
-;;; 
-;;; It should return something that identifies this instance of the module for use by the other functions of the module as described below.  The return value of the creation function is the "instance" of this module.  If there is no create function for a module the instance will be nil for all instantiations of that module.
-;;; 
-;;; reset
-;;; 
-;;; The reset function will be called after the creation function is called and every time a model containing an instance of the module is reset.  The reset function will be passed one parameter which will be the instance of the module for that model.
-;;; 
-;;; The reset function should be used to reinitialize the module and typical tasks would be to define chunk-types and chunks that are used by the module. 
-;;; 
-;;; The return value from the reset function is ignored. 
-;;; 
-;;; query 
-;;; 
-;;; The query function is used to report on the state of the module and its buffer or any other "instant" tests the module provides.  It will be called in response to any query request being made to any of the buffers of the module.  The query function will be passed four parameters.  The first will be the instance of the module for the model in which the buffer request was made.  The second will be the name of the buffer to which the request was made, the third will be the name of a slot specification and the fourth will be a value for that slot. 
-;;; 
-;;; If the return value from the query function is nil then that indicates that the requested test has failed.  Any other value is considered a successful response to the query.
-;;; 
-;;; If a module provides a query function it must be able to respond to the slot state with possible values: busy, free, or error and the slot buffer with possible values: empty, full, or stuffed(?).
-;;; 
-;;; Stylistically, this function should not have any persistent or time delayed effects nor should it schedule any actions because that is what the "true" requests are for and the distinction should be maintained for consistency.
-;;; 
-;;; request
-;;; 
-;;; The request function is used to respond to requests made to the buffers of the module.  It will be called in response to requests being made to any of the buffers of the module.  The request function will be passed three parameters.  The first will be the instance of the module for the model in which the buffer request was made.  The second will be the name of the buffer to which the request was made, and the third will be the chunk specification that was sent to the buffer.  
-;;; 
-;;; The return value from the request function is ignored.
-;;; 
-;;; Stylistically, this function should schedule events for buffer changes or other actions that it does as a response to the request, particularly if those events are to occur at a future time.
-;;; 
-;;; buffer-mod
-;;; 
-;;; The buffer-mod function is used to respond to requests made to the module to modify the chunk in any of the module's buffers.  The buffer-mod function will be passed three parameters.  The first will be the instance of the module for the model in which the buffer-mod request was made.  The second will be the name of the buffer to which the request was made, and the third will be a list of chunk modifications indicating how to modify the chunk in the buffer.  
-;;; 
-;;; The return value from the buffer-mod function is ignored.
-;;; 
-;;; Stylistically, this function should schedule the buffer modification or any other actions that it does as a response to the request, particularly if those events are to occur at a future time.
-;;; 
-;;; init-params 
-;;; 
-;;; The init-params function is used to specify the parameter values that are maintained and used by the module. It will be called after the reset function of the module is called. It should take one parameter, which will be the instance of the module in the model in which the request is being made.  
-;;; 
-;;; The init-params function should return a list of parameters which have been generated by calling define-parameter.  The parameters of that list do not need to be unique i.e. every instance of the module could return the same list of parameters that was built once when the module code was loaded.  
-;;; 
-;;; The parameters specified will then be made available to the user through the sgp command and the params function of the module (described next) will be used to control them. 
-;;; 
-;;; params 
-;;; 
-;;; The params function is used to control the parameters of a module. The params function is called in two situations both in response to the sgp command.  It will be either a request for the current value of a parameter of the module or to set a new value for a parameter of the module.  
-;;; 
-;;; The params function will be called with two parameters. The first will be the instance of the module in the model in which the request is being made.  The second parameter will be either the name of a parameter for the module or a cons. If it is the name of a parameter, then it is a request for the current value of that parameter, and the params function should return that value.
-;;; 
-;;; In the case where the second parameter is a cons, the car is a parameter name and the cdr is a value.  This is either a request to set the value of the named parameter if it is owned by the module, or a notification that a non-owned parameter has been changed.  If it is a parameter that the module owns then the value is what was passed to sgp and it has already passed the valid test if one was provided when creating the parameter.  The function should handle the request to change the parameter however the module needs that to be done, and then return the current value of that parameter.  Note that how a module "sets" parameters is entirely up to the module implementer, and there is nothing that requires it to return the same value as the one requested for the setting.
-;;; 
-;;; If the parameter is one which the module does not own, then the value is the one that was returned from the owning module which may or may not be the same as the value which was passed to sgp.  For a non-owned parameter the return value of the params function is ignored.
-;;; 
-;;; delete  
-;;; 
-;;; The delete function will be called once when a model with an instance of the module is deleted. The delete function will be passed one parameter which will be the instance of the module in the model which is being deleted.  
-;;; 
-;;; The return value from the delete function is ignored.
-;;; 
-;;; notify-on-clear
-;;; 
-;;; The notify-on-clear function will be called when any buffer in the model is cleared, regardless of which module defined that buffer.  The notify-on-clear function will be passed three parameters.  The first will be the instance of the module in that model.  The second will be the name of the buffer which is being cleared and the third will be the name of the chunk that is being cleared from that buffer.  
-;;; 
-;;; The return value of this function is ignored.
-;;; 
-;;; The reason for such a test is to enable the functioning of the declarative memory module to have chunks enter declarative memory from the buffers without having to "build that in" and could allow for the creation of alternate declarative memory systems that would not require modifying the internals of the framework.  I don't foresee any module other than declarative memory using it at this point, but perhaps once it is there maybe other uses will be found.
-;;; 
+;;; define-module creates a new module for the system along with its buffers.
+;;;
+;;; See reference manual for details.
 ;;; 
 ;;; get-module 
 ;;; 
-;;; (defmacro get-module (module-name))
-;;; (defun get-module-fct (module-name))
+;;; (defmacro get-module (module-name &optional suppress-warning))
+;;; (defun get-module-fct (module-name &optional suppress-warning))
 ;;; 
 ;;; module-name a symbol which is the name of a module
+;;; suppress-warning a generalized boolean 
 ;;; 
-;;; If module-name is the name of a module in the current model then the instantiation of that module in the current model is returned.  
+;;; If module-name is the name of a module in the current model then the 
+;;; instantiation of that module in the current model is returned.  
 ;;; 
-;;; If module-name does not name a module in the current model or there is no current model then a warning is printed and nil is returned.
+;;; If module-name does not name a module in the current model or there is
+;;; no current model then a warning is printed, unless suppress-warning is 
+;;; true, and nil is returned
 ;;; 
-;;; This exists so that if a module provides functions that are called other than through the buffer it can get the correct instantiation of itself to use.  It is not really for general purpose use because the instantiations of a module are really only meaningful within the code of the module.
+;;; This exists so that if a module provides functions that are called other
+;;; than through the buffer it can get the correct instantiation of itself to
+;;; use.  It is not really for general purpose use because the instantiations
+;;; of a module are really only meaningful within the code of the module.
 ;;; 
+;;; use-modules 
+;;;
+;;; (defmacro use-modules (&rest names))
+;;; (defun use-modules-fct (names))
+;;;
+;;; If called when there are no models defined it will limit the set of modules
+;;; that will be instantiated for models to only those indicated, those which
+;;; are marked as always required, and any that are required by the modules that
+;;; are specified.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Design Choices:
@@ -400,6 +344,42 @@
 
 (defvar *remote-act-r-modules* nil)
 
+
+;;; Allow for a limted set of modules to be instantiated
+;;; by the model.
+
+(defvar *limited-modules* nil)
+
+(defun clear-used-modules ()
+  (setf *limited-modules* nil))
+
+(defmacro use-modules (&rest names)
+  `(use-modules-fct ',names))
+
+(defun use-modules-fct (names)
+  (if (mp-models)
+      (print-warning "Use-modules can only be used when there are no models defined.")
+    (let ((l (bt:acquire-lock *define-model-lock* nil)))
+           (if (null l)
+               (print-warning "Cannot call use-modules while a model is being defined or deleted.")
+             (unwind-protect
+                 (if *defining-model*
+                     (print-warning "Cannot call use-modules while a model is being defined or deleted.")
+                   (dolist (n names)
+                     (if (get-abstract-module n)
+                         (pushnew n *limited-modules*)
+                       (print-warning "~s is not a valid module name in call to use-modules" n))))
+               (bt:release-lock *define-model-lock*))))))
+
+(defun required-module (abstract-module)
+  (or (null *limited-modules*)
+      (aif (act-r-module-required abstract-module) 
+           (or
+            (eq t it)
+            (intersection *limited-modules* it))
+           (find (act-r-module-name abstract-module) *limited-modules*))))
+
+
 ;;; Some macros to hide the global from direct use in other files
 
 
@@ -435,6 +415,7 @@
     (act-r-modules-update *modules-lookup*)))
 
 
+
 (defmacro define-module (module-name buffer-list params-list
                                      &key (version nil) 
                                      (documentation nil)
@@ -447,13 +428,16 @@
                                      (search nil)
                                      (offset nil)
                                      (run-start nil)
-                                     (run-end nil))
+                                     (run-end nil)
+                                     (required nil)
+                                     (requires nil))
   `(define-module-fct ',module-name ',buffer-list ',params-list ,@(when version `(:version ,version))
      ,@(when documentation `(:documentation ,documentation))
      :creation ',creation :reset ',reset :query ',query :request ',request
      :buffer-mod ',buffer-mod :params ',params  
      :delete ',delete :notify-on-clear ',notify-on-clear :update ',update :warning ',warning
-     :search ',search :offset ',offset :run-start ',run-start :run-end ',run-end))
+     :search ',search :offset ',offset :run-start ',run-start :run-end ',run-end
+     :required ',required :requires ',requires))
   
   
 (defun define-module-fct (module-name buffer-list params-list
@@ -462,7 +446,7 @@
                                       creation reset query
                                       request buffer-mod params 
                                       delete  notify-on-clear update warning
-                                      search offset run-start run-end)  
+                                      search offset run-start run-end required requires)  
   (unless (and version? docs?)
     (print-warning "Modules should always provide a version and documentation string."))
   
@@ -546,7 +530,8 @@
                                                     :search search
                                                     :offset offset
                                                     :run-notify run-start
-                                                    :run-over-notify run-end)))
+                                                    :run-over-notify run-end
+                                                    :required (if (listp required) required (if (eq required t) t (list required))))))
                      (bt:with-recursive-lock-held ((act-r-modules-lock *modules-lookup*))
                        (setf (gethash module-name (act-r-modules-table *modules-lookup*)) new-mod)
                        (if (null (act-r-modules-sorted-names *modules-lookup*))
@@ -572,7 +557,18 @@
                          (push module-name (act-r-modules-run-notify *modules-lookup*)))
                        
                        (when run-end 
-                         (push module-name (act-r-modules-run-over-notify *modules-lookup*))))
+                         (push module-name (act-r-modules-run-over-notify *modules-lookup*)))
+                       
+                       (if (listp requires)
+                           (dolist (r requires)
+                             (aif (gethash r (act-r-modules-table *modules-lookup*))
+                                  (when (listp (act-r-module-required it))
+                                    (push module-name (act-r-module-required it)))
+                                  (print-warning "Module ~s indicates it requires module ~s but that module does not exist."
+                                                 module-name r)))
+                         (print-warning "Ignoring invalid :requires value when defining module ~s" module-name))
+                       
+                       )
                     
                     (install-buffers module-name buffers)
                     (install-parameters module-name parameters)
@@ -605,7 +601,7 @@
 (defun remote-define-module (name buffer-list param-list &optional interface-list)
   
   (multiple-value-bind (valid interface)
-      (process-options-list interface-list "define-module" '(:version :documentation :creation :reset :query :request :buffer-mod :params :delete :notify-on-clear :update :warning :search :offset :run-start :run-end))
+      (process-options-list interface-list "define-module" '(:version :documentation :creation :reset :query :request :buffer-mod :params :delete :notify-on-clear :update :warning :search :offset :run-start :run-end :required :requires))
     (if valid
         (let ((success (apply 'define-module-fct (string->name name) (parse-remote-buffers buffer-list) (parse-remote-params param-list) interface)))
           (when success
@@ -616,7 +612,7 @@
           success)  
       nil)))
 
-(add-act-r-command "define-module" 'remote-define-module "Create a new module. Params: name (buffer-spec*) (param-spec*) {< version, documentation, creation , reset, query, request, buffer-mod, params, delete, notify-on-clear, update, warning, search, offset, run-start, run-end >}")
+(add-act-r-command "define-module" 'remote-define-module "Create a new module. Params: name (buffer-spec*) (param-spec*) {< version, documentation, creation , reset, query, request, buffer-mod, params, delete, notify-on-clear, update, warning, search, offset, run-start, run-end, required, requires >}")
 
 
 (defun verify-remote-modules ()
@@ -703,25 +699,39 @@
 
 (add-act-r-command "undefine-module" 'remote-undefine-module "Remove the named module from the system.  Params: module-name." t)
     
-(defmacro get-module (module-name)
-  `(get-module-fct ',module-name))
+(defmacro get-module (module-name &optional no-warning)
+  `(get-module-fct ',module-name ',no-warning))
 
-(defun get-module-fct (module-name)
-  (let (instance)
+(defun get-module&abstract (module-name &optional no-warning)
+  (let (abstract)
     (values (verify-current-model
              "get-module called with no current model."
              (multiple-value-bind (mod present)
                  (gethash module-name (let ((model (current-model-struct))) (bt:with-lock-held ((act-r-model-modules-lock model)) (act-r-model-modules-table model))))
                (if present
-                   (progn (setf instance (cdr mod)) (car mod))
-                 (print-warning "~s is not the name of a module in the current model." module-name))))
-            instance)))
+                   (progn 
+                     (setf abstract (cdr mod)) 
+                     (car mod))
+                 (unless no-warning (print-warning "~s is not the name of a module in the current model." module-name)))))
+            abstract)))
 
+(defun get-module-fct (module-name &optional no-warning)
+  (let (exists)
+    (values (verify-current-model
+             "get-module called with no current model."
+             (multiple-value-bind (mod present)
+                 (gethash module-name (let ((model (current-model-struct))) (bt:with-lock-held ((act-r-model-modules-lock model)) (act-r-model-modules-table model))))
+               (if present
+                   (progn 
+                     (setf exists t) 
+                     (car mod))
+                 (unless no-warning (print-warning "~s is not the name of a module in the current model." module-name)))))
+            exists)))
 
-(defun external-get-module (module-name)
-  (get-module-fct (string->name module-name)))
+(defun external-get-module (module-name &optional no-warning)
+  (get-module-fct (string->name module-name) no-warning))
 
-(add-act-r-command "get-module" 'external-get-module "Return the instance of the named module in the current model. Params: module-name")
+(add-act-r-command "get-module" 'external-get-module "Return the instance of the named module in the current model. Params: module-name {no-warning}")
 
 (defun get-abstract-module (module-name)
   (bt:with-recursive-lock-held ((act-r-modules-lock *modules-lookup*))
@@ -733,26 +743,34 @@
     nil))
 
 
-(defun process-parameters (module-name param)
-  (multiple-value-bind (instance module) (get-module-fct module-name)
-    (if module
-        (awhen (act-r-module-params module) ;; should be guranteed
-               (if (act-r-module-external module)
-                   (if (consp param)
-                       (dispatch-apply it instance (list (car param) (cdr param)))
-                     (dispatch-apply it instance (list param)))
-                   (funcall it instance param)))
-      (print-warning "There is no module named ~S. Cannot process parameters for it." module-name))))
+(defun process-parameters (module-name param ignore)
+  (multiple-value-bind (mod present)
+      (gethash module-name 
+               (let ((model (current-model-struct))) 
+                 (bt:with-lock-held ((act-r-model-modules-lock model)) 
+                   (act-r-model-modules-table model))))
+      (if present
+          (let ((module (cdr mod))
+                (instance (car mod)))
+            (awhen (act-r-module-params module) ;; should be guranteed
+                   (if (act-r-module-external module)
+                       (if (consp param)
+                           (dispatch-apply it instance (list (car param) (cdr param)))
+                         (dispatch-apply it instance (list param)))
+                     (funcall it instance param))))
+        (unless ignore
+          (print-warning "There is no module named ~S. Cannot process parameters for it." module-name)))))
 
 
 (defun instantiate-module (module-name model-name)
   (let ((module (get-abstract-module module-name)))
     (if module
-        (let ((instance (when (act-r-module-creation module)
-                          (dispatch-apply (act-r-module-creation module) model-name))))
-          
-          ;; store the abstract in the table with the instance!
-          (cons instance module))
+        (when (required-module module)
+          (let ((instance (when (act-r-module-creation module)
+                            (dispatch-apply (act-r-module-creation module) model-name))))
+            
+            ;; store the abstract in the table with the instance!
+            (cons instance module)))
       (print-warning "There is no module named ~S. Cannot instantiate it." module-name))))
 
 (defun reset-module (module-alist)
@@ -822,7 +840,7 @@
 
 (defun delete-module (module-name)
   (multiple-value-bind (instance module)
-      (get-module-fct module-name)
+      (get-module&abstract module-name)
     (if module
         (awhen (act-r-module-delete module)
                (dispatch-apply it instance))
@@ -830,39 +848,43 @@
   
 (defun notify-module (module-name buffer-name chunk-name)
   (multiple-value-bind (instance module)
-      (get-module-fct module-name)
+      (get-module&abstract module-name t)
     (if module
         ;; this only gets called if there is such a function
         ;; so no need to double check it
         (dispatch-apply (act-r-module-notify-on-clear module) instance buffer-name chunk-name)
-      (print-warning "There is no module named ~S in the current model. Cannot notify it of a buffer's clearing." module-name))))
+      (unless *limited-modules*
+        (print-warning "There is no module named ~S in the current model. Cannot notify it of a buffer's clearing." module-name)))))
 
 (defun update-the-module (module-name old-time new-time)
   (multiple-value-bind (instance module)
-      (get-module-fct module-name)
+      (get-module&abstract module-name t)
     (if module
         ;; this only gets called if there is such a function
         ;; so no need to double check it
         (dispatch-apply (act-r-module-update module) instance old-time new-time)
-      (print-warning "There is no module named ~S in the current model. Cannot update it." module-name))))
+      (unless *limited-modules*
+        (print-warning "There is no module named ~S in the current model. Cannot update it." module-name)))))
 
 (defun run-notify-module (module-name)
   (multiple-value-bind (instance module)
-      (get-module-fct module-name)
+      (get-module&abstract module-name t)
     (if module
         ;; this only gets called if there is such a function
         ;; so no need to double check it
         (dispatch-apply (act-r-module-run-notify module) instance)
-      (print-warning "There is no module named ~S in the current model. Cannot notify it of a run start." module-name))))
+      (unless *limited-modules*
+        (print-warning "There is no module named ~S in the current model. Cannot notify it of a run start." module-name)))))
 
 (defun run-over-notify-module (module-name)
   (multiple-value-bind (instance module)
-      (get-module-fct module-name)
+      (get-module&abstract module-name t)
     (if module
         ;; this only gets called if there is such a function
         ;; so no need to double check it
         (dispatch-apply (act-r-module-run-over-notify module) instance)
-      (print-warning "There is no module named ~S in the current model. Cannot notify it of a run ending." module-name))))
+      (unless *limited-modules*
+        (print-warning "There is no module named ~S in the current model. Cannot notify it of a run ending." module-name)))))
 
 (defun m-buffer-search (buffer-name)
   (aif (buffers-module-name buffer-name)
@@ -871,7 +893,7 @@
 
 (defun module-m-buffer-search (module-name buffer-name)
   (multiple-value-bind (instance module)
-      (get-module-fct module-name)
+      (get-module&abstract module-name)
     (if module
         (aif (act-r-module-search module)
              (values t (dispatch-apply it instance buffer-name))
@@ -885,7 +907,7 @@
 
 (defun module-m-buffer-offset (module-name buffer-name c-list)
   (multiple-value-bind (instance module)
-      (get-module-fct module-name)
+      (get-module&abstract module-name)
     (if module
         (aif (act-r-module-offset module)
              (values t (dispatch-apply it instance buffer-name c-list))

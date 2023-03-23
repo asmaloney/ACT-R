@@ -11,6 +11,7 @@ button [control_panel_name].o_frame.open -text "Open File" \
          global currently_open_files
          global model_type
          global top_dir
+         global options_array
 
          if {$local_connection == 0} {
            tk_messageBox -icon warning -type ok -title "Open warning" \
@@ -18,6 +19,18 @@ button [control_panel_name].o_frame.open -text "Open File" \
                                    environment is not running on the same machine\
                                    as ACT-R."  
          } else {
+
+           if {$options_array(edit_warn) == 1} {
+              tk_messageBox -icon warning -type ok -title "Open file" \
+                         -message "ACT-R model and experiment files are regular text files.\
+                                   They can be opened and modified with any text editor.\
+                                   This tool is not meant as the primary means of working with\
+                                   ACT-R files.  It is a very limited text editor meant mostly\
+                                   as a way to view or make simple changes to the files.\
+                                   This warning can be disabled in the Options."
+           }
+
+
            set fname [tk_getOpenFile -title "File to open" -initialdir $top_dir] 
            if {$fname != ""} {
              edit_model_file $fname
@@ -32,6 +45,7 @@ button [control_panel_name].o_frame.create -text "New File" \
          global currently_open_files
          global model_type
          global top_dir
+         global options_array
 
          if {$local_connection == 0} {
            tk_messageBox -icon warning -type ok -title "Open warning" \
@@ -39,6 +53,17 @@ button [control_panel_name].o_frame.create -text "New File" \
                                    environment is not running on the same machine\
                                    as ACT-R."  
          } else {
+
+           if {$options_array(edit_warn) == 1} {
+              tk_messageBox -icon warning -type ok -title "New file" \
+                         -message "ACT-R model and experiment files are regular text files.\
+                                   They can be created and modified with any text editor.\
+                                   This tool is not meant as the primary means of working with\
+                                   ACT-R files, and it is a very limited text editor.\
+                                   This warning can be disabled in the Options."
+           }
+
+
            set fname [tk_getSaveFile -title "Save new file as" -initialdir $top_dir]
            if {$fname != ""} {
              write_data "" $fname

@@ -13,7 +13,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : buffers.lisp
-;;; Version     : 7.0
+;;; Version     : 7.1
 ;;; 
 ;;; Description : Functions that define the operation of buffers.
 ;;; 
@@ -508,6 +508,16 @@
 ;;; 2021.09.10 Dan
 ;;;             : * Buffer-slot-value-external needs to encode the result so that
 ;;;             :   strings are handled properly.
+;;; 2021.09.23 Dan
+;;;             : * Replaced format nil with concatenate to build chunk names.
+;;; 2021.10.18 Dan [7.1]
+;;;             : * Added model-buffers which is like buffers but only returns
+;;;             :   the names of buffers defined in the current model.
+;;;             : * All of the commands here use that instead of bufferse except
+;;;             :   list-of-buffers-p.
+;;; 2021.10.19 Dan
+;;;             : * Set the :required flag for the buffer-params module to be
+;;;             :   declarative so that it's always used if declarative is used.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -566,6 +576,20 @@
       (hash-table-keys *buffers-table*))))
 
 (add-act-r-command "buffers" 'buffers "Return a list with all the currently defined buffers' names. Params {sorted}.")
+
+
+(defun model-buffers (&optional sorted)
+  (let ((model (current-model-struct)))
+    (if model
+        (bt:with-lock-held ((act-r-model-buffers-lock model))
+          (if sorted
+              (sort (hash-table-keys (act-r-model-buffers model)) 'string< :key 'symbol-name)
+            (hash-table-keys (act-r-model-buffers model))))
+      (print-warning "No current model in call to model-buffers."))))
+
+(add-act-r-command "model-buffers" 'model-buffers "Return a list with all the currently defined buffers' names from the current model. Params {sorted}.")
+
+
 
 (defun buffer-exists (name)
   (multiple-value-bind (buffer present)
@@ -765,7 +789,7 @@
 (define-module buffer-params nil nil :version "1.0"
   :documentation "Module to hold and control the buffer parameters"
   :creation create-buffer-param-module
-  :params buffer-params-handler)
+  :params buffer-params-handler :required 'declarative)
 
 
 
@@ -847,7 +871,7 @@
     (let ((res nil))
       (dolist (buffer-name (if buffer-names-list
                                buffer-names-list
-                             (buffers))
+                             (model-buffers))
                            res)
         (let ((buffer (buffer-instance buffer-name)))
           (if buffer
@@ -881,7 +905,7 @@
     (let ((s (make-string-output-stream)))
       (dolist (buffer-name (if buffer-names-list
                                buffer-names-list
-                             (buffers)))
+                             (model-buffers)))
         (let ((buffer (buffer-instance buffer-name)))
           (when buffer
             (bt:with-recursive-lock-held ((act-r-buffer-lock buffer))
@@ -901,7 +925,7 @@
 (add-act-r-command "printed-buffer-chunk" 'printed-buffer-chunk-external "Return a string of the printed output for the contents of specified buffers. Params: {buffer-name}*.")
 
 (defun show-buffer-chunks ()
-  (dolist (buffer-name (buffers))
+  (dolist (buffer-name (model-buffers))
     (let* ((chunk (buffer-read buffer-name)))
           (if chunk
               (progn
@@ -917,7 +941,7 @@
    (verify-current-model
     "buffer-status called with no current model."
     (let ((res nil))
-      (dolist (buffer-name (aif buffer-names-list it (buffers)) res)
+      (dolist (buffer-name (aif buffer-names-list it (model-buffers)) res)
         (let ((buffer (buffer-instance buffer-name))
               (status nil))
           (if buffer
@@ -944,7 +968,7 @@
    (verify-current-model
     "printed-buffer-status called with no current model."
     (let ((s (make-string-output-stream)))
-      (dolist (buffer-name (aif buffer-names-list it (buffers)))
+      (dolist (buffer-name (aif buffer-names-list it (model-buffers)))
         (let ((buffer (buffer-instance buffer-name))
               (status nil))
           (when buffer
@@ -1309,7 +1333,7 @@
                                    (cond ((act-r-buffer-reuse? buffer)
                                           
                                           (unless (act-r-buffer-reuse-chunk buffer)
-                                            (let ((name (new-name-fct (format nil "~s-chunk" (act-r-buffer-name buffer)))))
+                                            (let ((name (new-name-fct (concatenate 'string (symbol-name (act-r-buffer-name buffer)) "-chunk"))))
                                               (define-chunks-fct (list name))
                                               (make-chunk-reusable name)
                                               (setf (act-r-buffer-reuse-chunk buffer) name)))                                          
@@ -1328,7 +1352,7 @@
                                  
                                  (cond ((act-r-buffer-reuse? buffer)
                                         (unless (act-r-buffer-reuse-chunk buffer)
-                                            (let ((name (new-name-fct (format nil "~s-chunk" (act-r-buffer-name buffer)))))
+                                            (let ((name (new-name-fct (concatenate 'string (symbol-name (act-r-buffer-name buffer)) "-chunk"))))
                                               (define-chunks-fct (list name))
                                               (make-chunk-reusable name)
                                               (setf (act-r-buffer-reuse-chunk buffer) name)))
@@ -1434,7 +1458,7 @@
               (let ((copy-name (if (act-r-chunk-spec-p chunk-or-spec)
                                    (cond ((act-r-buffer-reuse? buffer)
                                           (unless (act-r-buffer-reuse-chunk buffer)
-                                            (let ((name (new-name-fct (format nil "~s-chunk" (act-r-buffer-name buffer)))))
+                                            (let ((name (new-name-fct (concatenate 'string (symbol-name (act-r-buffer-name buffer)) "-chunk"))))
                                               (define-chunks-fct (list name))
                                               (make-chunk-reusable name)
                                               (setf (act-r-buffer-reuse-chunk buffer) name)))
@@ -1452,7 +1476,7 @@
                                  
                                  (cond ((act-r-buffer-reuse? buffer)
                                         (unless (act-r-buffer-reuse-chunk buffer)
-                                            (let ((name (new-name-fct (format nil "~s-chunk" (act-r-buffer-name buffer)))))
+                                            (let ((name (new-name-fct (concatenate 'string (symbol-name (act-r-buffer-name buffer)) "-chunk"))))
                                               (define-chunks-fct (list name))
                                               (make-chunk-reusable name)
                                               (setf (act-r-buffer-reuse-chunk buffer) name)))

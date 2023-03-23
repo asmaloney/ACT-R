@@ -85,6 +85,14 @@
 ;;;             : * Get-parameters simplified to avoid the need to get the 
 ;;;             :   struct from the table twice (once to check valid and once to
 ;;;             :   actually get the struct).
+;;; 2021.10.18 Dan
+;;;             : * Don't warn about a missing module when trying to set a
+;;;             :   parameter for a module that's not the owner by using the
+;;;             :   new third parameter to process-parameters (which ignores
+;;;             :   warnings when t).
+;;; 2021.10.20 Dan
+;;;             : * Fixed show-all-parameters and the set/get functions so that
+;;;             :   they handle missing modules well.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -235,14 +243,18 @@
     (dolist (p-name params (reverse res))
       (aif (get-parameter-struct p-name)
           (let* ((owner (act-r-parameter-owner it))
-                 (val (process-parameters owner p-name)))
-            (push val res)
-            (when output
-              (command-output "~S ~S (default ~S) : ~A"
-                              p-name
-                              val
-                              (act-r-parameter-default it)
-                              (act-r-parameter-details it))))
+                 (val (process-parameters owner p-name nil)))
+            (if (get-module-fct owner t)
+                (progn
+                  (push val res)
+                  (when output
+                    (command-output "~S ~S (default ~S) : ~A"
+                                    p-name
+                                    val
+                                    (act-r-parameter-default it)
+                                    (act-r-parameter-details it))))
+              (push :bad-parameter-name res)))
+              
         (push :bad-parameter-name res)))))
 
 
@@ -282,11 +294,14 @@
 
 (defun internal-set-parameter-value (param value)
   (let* ((current-value (process-parameters (act-r-parameter-owner param)
-                                            (cons (act-r-parameter-param-name param) value))))
-    
-    (dolist (s (bt:with-lock-held (*parameters-table-lock*) (act-r-parameter-users param)) current-value)
-      
-      (process-parameters s (cons (act-r-parameter-param-name param) current-value)))))
+                                            (cons (act-r-parameter-param-name param) value)
+                                            nil)))
+    (if (get-module-fct (act-r-parameter-owner param) t)
+        
+        (dolist (s (bt:with-lock-held (*parameters-table-lock*) (act-r-parameter-users param)) current-value)
+          
+          (process-parameters s (cons (act-r-parameter-param-name param) current-value) t))
+      :bad-parameter-name)))
 
 (defun set-parameter-value (param value)
   (let ((m (current-model)))
@@ -378,9 +393,10 @@
 (defun show-all-parameters ()
   (let ((current-val-table (make-hash-table)))
     (maphash (lambda (p-name param)
-               (push 
-                (cons param (process-parameters (act-r-parameter-owner param) p-name)) 
-                (gethash (act-r-parameter-owner param) current-val-table)))
+               (when (get-module-fct (act-r-parameter-owner param) t)
+                 (push 
+                  (cons param (process-parameters (act-r-parameter-owner param) p-name nil)) 
+                  (gethash (act-r-parameter-owner param) current-val-table))))
              (bt:with-lock-held (*parameters-table-lock*) *act-r-parameters-table*))
     (let ((name-len (1+ (apply #'max 
                                (mapcar (lambda (x) 
@@ -409,19 +425,19 @@
       
       
       (dolist (module-name (sort (hash-table-keys current-val-table) #'string< :key 'symbol-name))
-        
-        (command-output "--------------------------------~%~S module" module-name)
-        (command-output "--------------------------------")
-        (dolist (param (sort (gethash module-name current-val-table)  #'string< :key (lambda (x) (symbol-name (act-r-parameter-param-name (car x))))))
-                     
-          (command-output "~vS ~vS default: ~vS : ~A"
-                          name-len
-                          (act-r-parameter-param-name (car param))
-                          value-len
-                          (cdr param)
-                          default-len
-                          (act-r-parameter-default (car param))
-                          (act-r-parameter-details (car param))))))))
+        (when (get-module-fct module-name t)
+          (command-output "--------------------------------~%~S module" module-name)
+          (command-output "--------------------------------")
+          (dolist (param (sort (gethash module-name current-val-table)  #'string< :key (lambda (x) (symbol-name (act-r-parameter-param-name (car x))))))
+            
+            (command-output "~vS ~vS default: ~vS : ~A"
+                            name-len
+                            (act-r-parameter-param-name (car param))
+                            value-len
+                            (cdr param)
+                            default-len
+                            (act-r-parameter-default (car param))
+                            (act-r-parameter-details (car param)))))))))
       
   
 (defun get-parameter-default-value (param)

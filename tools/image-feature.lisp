@@ -12,7 +12,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; 
 ;;; Filename    : image-feature.lisp
-;;; Version     : 1.0
+;;; Version     : 1.1
 ;;; 
 ;;; Description : Provides an image item for the virtual windows of the AGI which
 ;;;               can display a .gif through the visible virtual windows.
@@ -55,6 +55,11 @@
 ;;; 2021.05.11 Dan
 ;;;             : * Changed reference to GUI directory to gui to avoid issues
 ;;;             :   with logical pathnames (particularlly in SBCL).
+;;; 2022.03.02 Dan [1.1]
+;;;             : * Added the :clickable keyword parameter to create-image-...
+;;;             :   and add-image-... so that one can turn off the response to
+;;;             :   clicks if needed, for example when placing other items that
+;;;             :   are clickable (like buttons) overlapping an image.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -69,11 +74,11 @@
 ;;;
 ;;; Two functions are provided for using them like the other AGI elements:
 ;;; 
-;;; create-image-for-exp-window (win text file &key (x 0) (y 0) (width 50) (height 50) (action nil))
+;;; create-image-for-exp-window (win text file &key (x 0) (y 0) (width 50) (height 50) (action nil) (clickable t))
 ;;;
 ;;; and 
 ;;; 
-;;; add-image-to-exp-window (win text file &key (x 0) (y 0) (width 50) (height 50) (action nil))
+;;; add-image-to-exp-window (win text file &key (x 0) (y 0) (width 50) (height 50) (action nil) (clickable t))
 ;;;
 ;;; Win is the window reference (as with other AGI items), text is a string which
 ;;; will be the value the model sees for attending the item.  File should be the
@@ -82,8 +87,10 @@
 ;;; corner of the image in the window.  Width and height specify the size of the
 ;;; image for display purposes and the .gif file will be clipped to fit if 
 ;;; needed (it does not scale, center, or otherwise attempt to fit that space).
-;;; Action specifies a user function to call when the mouse is clicked within the
-;;; boundaries of the image, and it can be specified the same way as button actions:
+;;; If clickable is specified as non-nil (the default) then an action function
+;;; can be set, otherwise the image will ignore mouse clicks. Action specifies a 
+;;; user function to call when the mouse is clicked within the boundaries of the
+;;; image, and it can be specified the same way as button actions:
 ;;; a valid command string, a Lisp function, a symbol naming a Lisp function, or
 ;;; a list where the first item is a command/function and the remaining items
 ;;; are values which will be passed to that function.  If it is not a list, then
@@ -169,7 +176,7 @@
 ;;; The function for creating one which handles all the AGI setup necessary for
 ;;; recording and accessing the underlying object cleanly.
 
-(defun create-image-for-exp-window (win text file &key (x 0) (y 0) (width 50) (height 50) (action nil))
+(defun create-image-for-exp-window (win text file &key (x 0) (y 0) (width 50) (height 50) (action nil) (clickable t))
   "Creates an image item for the experiment window"
   
   ;(when (and win (symbolp win))
@@ -184,9 +191,11 @@
                          :x-pos x
                          :y-pos y
                          :dialog-item-text text
-                         :action (if (valid-button-action action) 
-                                     action
-                                   'default-image-action)
+                         :action (when clickable 
+                                   (if (valid-button-action action) 
+                                       action
+                                     'default-image-action))
+                         :handles-click-p clickable
                          :height height
                          :width width 
                          :file file
@@ -204,19 +213,19 @@
 
 (defun external-create-image-for-exp-window (win text file &optional params)
   (multiple-value-bind (valid ol) 
-      (process-options-list params 'create-image-for-exp-window '(:x :y :height :width :action))
+      (process-options-list params 'create-image-for-exp-window '(:x :y :height :width :action :clickable))
     (when valid 
       (apply 'create-image-for-exp-window win text file ol))))
 
-(add-act-r-command "create-image-for-exp-window" 'external-create-image-for-exp-window "Create an image item for the provided experiment window with the features specified. Params: window text file  {< x, y, width, height, action >}.")
+(add-act-r-command "create-image-for-exp-window" 'external-create-image-for-exp-window "Create an image item for the provided experiment window with the features specified. Params: window text file  {< x, y, width, height, action, clickable >}.")
 
-(defun add-image-to-exp-window (win text file &key (x 0) (y 0) (width 50) (height 50) (action nil))
+(defun add-image-to-exp-window (win text file &key (x 0) (y 0) (width 50) (height 50) (action nil) (clickable t))
   "Create and display an image item in the experiment window"
   
   (when (and win (symbolp win))
     (setf win (symbol-name win)))
   
-  (let ((item-key (create-image-for-exp-window win text file :x x :y y :width width :height height :action action)))
+  (let ((item-key (create-image-for-exp-window win text file :x x :y y :width width :height height :action action :clickable clickable)))
     (if item-key
         (if (add-items-to-exp-window win item-key)
             item-key
@@ -225,11 +234,11 @@
 
 (defun external-add-image-to-exp-window (win text file &optional params)
   (multiple-value-bind (valid ol) 
-      (process-options-list params 'add-image-to-exp-window '(:x :y :height :width :action))
+      (process-options-list params 'add-image-to-exp-window '(:x :y :height :width :action :clickable))
     (when valid 
       (apply 'add-image-to-exp-window win text file ol))))
   
-(add-act-r-command "add-image-to-exp-window" 'external-add-image-to-exp-window "Create an image item for the provided experiment window with the features specified and place it in the window. Params: window text file {<x, y, width, height, action >}.")
+(add-act-r-command "add-image-to-exp-window" 'external-add-image-to-exp-window "Create an image item for the provided experiment window with the features specified and place it in the window. Params: window text file {<x, y, width, height, action, clickable >}.")
 
 ;;; The vv-click-event-handler is the method which must be written
 ;;; to actually process the click which the model produces.  This is

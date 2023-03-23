@@ -108,6 +108,9 @@
 ;;;             : * Instead of using create-new-buffer-chunk just schedule 
 ;;;             :   set-buffer-chunk with a spec, and create that spec at reset
 ;;;             :   so it doesn't have to happen every time.
+;;; 2021.10.20 Dan
+;;;             : * Check whether there is a procedural module before setting
+;;;             :   the :do-not-* parameters.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; General Docs:
@@ -163,8 +166,8 @@
   (setf (temporal-module-spec instance) (define-chunk-spec isa time))
   
   ;; Do NOT strict harvest the temporal buffer by default
-  (sgp :do-not-harvest temporal :do-not-query temporal)
-  )
+  (when (get-module procedural t)
+    (sgp :do-not-harvest temporal :do-not-query temporal)))
 
 
 (defun temporal-query (instance buffer-name slot value)

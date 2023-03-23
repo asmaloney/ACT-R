@@ -12,7 +12,7 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;
 ;;; Filename    : emma.lisp
-;;; Version     : 8.1a2
+;;; Version     : 8.2a1
 ;;;
 ;;; Description : Implementation of Dario Salvucci's EMMA system for eye
 ;;;             : movements based on subclassing the Vision Module and making
@@ -307,6 +307,29 @@
 ;;; 2020.08.26 Dan
 ;;;             : * Removed the path for require-compiled since it's not needed
 ;;;             :   and results in warnings in SBCL.
+;;; 2022.03.24 Dan [8.2a1]
+;;;             : * Realized that there were two different current-eye-location
+;;;             :   commands -- the signal it generates when the position 
+;;;             :   changes and one to get the current position.  Because the
+;;;             :   signal was added first the remote command for getting the
+;;;             :   position didn't work.
+;;;             :   Now, the signal is named new-eye-location and the command
+;;;             :   for getting the position explicitly is current-eye-location
+;;;             :   to match the function.
+;;;             : * Added a history recorder so one can get the fixation data
+;;;             :   out fairly easily.  The data stream is called 
+;;;             :   "emma-fixations" and the data it reports is a list of 
+;;;             :   three item lists.  The first item is the time in ms of the
+;;;             :   start of a fixation (when the eye stoped moving). The 
+;;;             :   second element is the time in ms when a saccade to move
+;;;             :   from that fixation starts (determined by the end of 
+;;;             :   preparation/start of initiation).  The third element is a
+;;;             :   list of the x, y, and z position of the eye for the 
+;;;             :   fixation.  The list is in order by time of fixation with
+;;;             :   the first list being the fixation that was ongoing when
+;;;             :   the data recording started and the last is for the current
+;;;             :   fixation, which will have a second value of -1 if it is
+;;;             :   "ongoing" i.e. no saccade has started to end it.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 #+:packaged-actr (in-package :act-r)
@@ -340,7 +363,9 @@
    (final-shift :accessor final-shift)
    (current-feat :accessor current-feat)
    (current-scale :accessor current-scale)
-   (prep-event :accessor prep-event))
+   (prep-event :accessor prep-event)
+   (save-history :accessor save-history :initform nil)
+   (history-data :accessor history-data :initform nil))
   (:default-initargs
       :name :emma
     :version-string "8.1a2"
@@ -358,7 +383,7 @@
 
 (monitor-act-r-command "installing-vision-device" "emma-detect-device-install")
 
-(add-act-r-command "current-eye-location" nil "Signal indicating the EMMA module's eye position has changed.  Params: x y z")
+(add-act-r-command "new-eye-location" nil "Signal indicating the EMMA module's eye position has changed.  Params: x y z")
 
 (defmethod set-eye-loc ((emma emma-vis-mod) (newloc vector))
   (bt:with-recursive-lock-held ((param-lock emma))
@@ -372,7 +397,7 @@
         (progn
           (print-warning "Invalid position ~s in call to set-eye-loc position not changed.")
           (return-from set-eye-loc))))
-    (dispatch-apply "current-eye-location" (px (current-marker emma)) (py (current-marker emma)) (pz (current-marker emma)))
+    (dispatch-apply "new-eye-location" (px (current-marker emma)) (py (current-marker emma)) (pz (current-marker emma)))
     (when (show-focus-p emma)
       (awhen (spot-color emma)
              ;; send window handler messages
@@ -380,7 +405,9 @@
              (let ((update-list
                     (list "eyeloc" (px (current-marker emma)) (py (current-marker emma)) (pz (current-marker emma)) (color->name it "blue"))))
                (dolist (d (current-devices "vision"))
-                 (notify-device d update-list)))))))
+                 (notify-device d update-list)))))
+    (when (save-history emma)
+      (push-last (list (mp-time-ms) -1 (coerce (current-marker emma) 'list)) (history-data emma)))))
 
 
 (defun emma-clear-action ()
@@ -547,7 +574,11 @@
 
 ;;;mjs after method to clear prep event
 (defmethod preparation-complete :after ((emma emma-vis-mod))
-  (setf (prep-event emma) nil))
+  (bt:with-recursive-lock-held ((param-lock emma))
+    (setf (prep-event emma) nil)
+    (when (save-history emma)
+      (awhen (history-data emma)
+        (setf (second (car (last it))) (mp-time-ms))))))
 
 
 ;;; COMPLETE-EYE-MOVE      [Method]
@@ -742,6 +773,12 @@
     (setf (current-marker emma) 
       (vector 0 0 (* (get-parameter-value :viewing-distance)
                      (get-parameter-value :pixels-per-inch))))
+    
+    (setf (history-data emma)
+      (if (save-history emma)
+          (list (list 0 -1 (coerce (current-marker emma) 'list)))
+        nil))
+        
     (clrhash (freq-ht emma))))
 
 
@@ -886,5 +923,42 @@
   :params 'params-emma-module
 )                 
 
+
+;;; Functions to handle the history stream (assuming the data
+;;; is recorded by the functions above).
+
+(defun enable-emma-history ()
+  (let ((emma (get-module :emma)))
+    (when emma
+      (bt:with-recursive-lock-held ((param-lock emma))
+        (setf (save-history emma) t)
+        (push-last 
+         (list (mp-time-ms) -1 (coerce (current-marker emma) 'list))
+         (history-data emma))))))
+
+(defun disable-emma-history ()
+  (let ((emma (get-module :emma)))
+    (when emma
+      (bt:with-recursive-lock-held ((param-lock emma))
+        (setf (save-history emma) nil)
+        
+        (awhen (history-data emma)
+               (setf (second (car (last it))) (mp-time-ms)))))))
+
+(defun emma-history-status ()
+  (let ((emma (get-module :emma)))
+    (if emma
+        (bt:with-recursive-lock-held ((param-lock emma))
+          (values (save-history emma) (when (history-data emma) t) t))
+      (values nil nil nil))))
+
+(defun emma-history-data ()
+  (let ((emma (get-module :emma)))
+    (when emma
+      (bt:with-recursive-lock-held ((param-lock emma))
+        (history-data emma)))))
+        
+        
+(define-history "emma-fixations" enable-emma-history disable-emma-history emma-history-status emma-history-data)
 
 (provide "emma")

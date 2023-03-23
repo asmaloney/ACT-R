@@ -1,11 +1,36 @@
 <html>
  <body>
 
+
   <script src="/socket.io/socket.io.js"></script>
 
+   <!--  For the mybinder and jupyter versions use this instead: src="socket.io/socket.io.js" -->
+
+ 
   <script> // General communication with the node.js interface to ACT-R
 
-   var socket = io('/environment');
+   var which_interface = 1; // 1 is normal, 2 is mybinder, 3 is jupyter, 4 is play-with-docker
+
+   if (which_interface == 1 || which_interface == 4) {
+
+     var socket = io('/environment');
+
+   } else if (which_interface == 2) {
+
+     var address = document.baseURI ;
+   
+     var socket = io('/environment', {
+      path: address.slice(address.indexOf('/user'))+"socket.io"
+     });
+   } else {
+
+     var address = document.baseURI ;
+  
+     var socket = io('/environment', {
+       path: "/proxy/4000/socket.io"
+     });
+   }
+
    var name_string = "";
    var cmdMap = new Map;
    var cmd_id = 0;
@@ -404,6 +429,28 @@
        alert("Only local connections may import modules.");
      }
    }       
+
+   // For container versions only allow picking a unit 1 model by name from a list
+
+   function load_unit1_model() {
+
+     var model = document.getElementById("unit_1_model");
+
+     load_results = "";
+
+     monitor_cmd("model-trace","monitor_loading");
+     monitor_cmd("command-trace","monitor_loading");
+     monitor_cmd("warning-trace","monitor_loading");
+     monitor_cmd("general-trace","monitor_loading");
+
+     if (model.selectedIndex != 0) {
+
+       selected = model.options[model.selectedIndex];
+
+       evaluate_cmd("load-act-r-code",null,["ACT-R:tutorial;unit1;"+selected.value],report_load_results);
+     }
+   }
+
 
    </script>
 
@@ -926,7 +973,7 @@
 
      var items = div_views.get(view);
 
-     evaluate_cmd("buffers",items.model,null,function(data){
+     evaluate_cmd("model-buffers",items.model,null,function(data){
                    var buffers = data[0];
                    
                    while(items.list.firstChild) {
@@ -1581,45 +1628,40 @@
      } 
 
 
-    if (item) {
+     if (item) {
 
-     evaluate_cmd("update-stepper",null,[item],function(data){
-       l = document.getElementById("stepper-d2");
-       l.innerHTML=data[0];
+       evaluate_cmd("update-stepper",null,[item],function(data){
+         l = document.getElementById("stepper-d2");
+         l.innerHTML=data[0];
 
-       tutor_data = new Map;
 
-       if (current_tutor_mode() && tutor_event) {
-         
-         l = document.getElementById("stepper-d3");
-         var txt ="";
+         if (current_tutor_mode() && tutor_event && (tutor_event.toUpperCase() == "PRODUCTION-SELECTED")) {
  
-         if (data[3]) {
-           data[3].forEach(function (x) {
-             txt = txt + x[0] + ":\n";
+           tutor_data = new Map;
+           l = document.getElementById("stepper-d3");
+           var txt ="";
+ 
+           if (data[3]) {
+             data[3].forEach(function (x) {
+               txt = txt + x[0] + ":\n";
 
-             tutor_data.set(x[0],{answer: ( (x[1].startsWith && x[1].startsWith("'") && x[1].endsWith("'")) ? "\""+x[1].slice(1,-1)+"\"" : x[1]), buffer: x[2]});
-           });
-         }
+               tutor_data.set(x[0],{answer: ( (x[1].startsWith && x[1].startsWith("'") && x[1].endsWith("'")) ? "\""+x[1].slice(1,-1)+"\"" : x[1]), buffer: x[2]});
+             });
+           }
 
-         l.innerHTML=txt;
-         
-         var index = 0;
+           l.innerHTML=txt;
+           var index = 0;
+           l = document.getElementById("stepper-d4");
+           var separator = data[2].search(/==>/gm);
 
-         l = document.getElementById("stepper-d4");
+           tutor_values = [];
+           tutor_answers = 0;
+           var last_buffer = null;
 
-         var separator = data[2].search(/==>/gm);
-
-         tutor_values = [];
-         tutor_answers = 0;
-
-         var last_buffer = null;
-
-         l.innerHTML=data[2].replace(/=[^&>=)\s]+/gim,function(m,o,s){
+           l.innerHTML=data[2].replace(/=[^&>=)\s]+/gim,function(m,o,s){
              var txt = "<mark style=\"background: lightblue\" onclick=\"tutor_entry("+index+")\">"+m+"</mark>";
              index++;
              var details = tutor_data.get(m);
-             
 
              if (o < separator) {
                if (details.buffer) {
@@ -1627,31 +1669,59 @@
                } else {
                  details.in_buffer = last_buffer.slice(1);
                }
+               tutor_values.push([m,(o < separator)]);
+
              } else {
-                if (s[o+m.length] == ">") {
-                  txt = m;
-                  index--;
-                }
-             }
+               if (s[o+m.length] == ">") {
+                 txt = m;
+                 index--;
+               } else {
+                 tutor_values.push([m,(o < separator)]);
+               }
+            }
 
-             tutor_values.push([m,(o < separator)]);
-             return(txt);});
+             return(txt);
+           });
 
-         tutor_items = index;
-         tutor_count = 0;
+           tutor_items = index;
+           tutor_count = 0;
+         } else {
+           tutor_items = null;
 
-       } else {
-         tutor_items = null;
+           l = document.getElementById("stepper-d3");
+           l.innerHTML=data[1];
+           l = document.getElementById("stepper-d4");
+           l.innerHTML=data[2];
 
-         l = document.getElementById("stepper-d3");
-         l.innerHTML=data[1];
-         l = document.getElementById("stepper-d4");
-         l.innerHTML=data[2];
+           if (tutor_event && (tutor_event.toUpperCase() == "PRODUCTION-SELECTED")) {
+             remove_instan_tutor();
+           }
+         }
+       });
+     } else {
+       if (current_tutor_mode() && tutor_event) {
+         evaluate_cmd("update-stepper",null,[false],function(data){
+           if (tutor_event.toUpperCase() == "CONFLICT-RESOLUTION") {
+             tutor_items = 1;
+             tutor_count = 0;
+             show_cr_tutor(data[0]);
+           } 
+           if (tutor_event.toUpperCase() == "START-RETRIEVAL") {
+             tutor_items = 1;
+             tutor_count = 0;
+             show_r_tutor(data[0]);
+           } 
+         });
+       } else if (tutor_event) {
+         if (tutor_event.toUpperCase() == "CONFLICT-RESOLUTION") {
+           remove_cr_tutor();
+         } 
+         if (tutor_event.toUpperCase() == "START-RETRIEVAL") {
+           remove_r_tutor();
+         } 
        }
-     });
+     }
    }
-   }
-
 
    function stepper_update(vals) {
      document.getElementById("next-stepper-event").innerHTML="";
@@ -1703,16 +1773,16 @@
                                   l.selected.style.backgroundColor = null;
                                 }
                                 l.selected = li;
-                                update_stepper_views(i);
+                                update_stepper_views();
                                 }};
 
                        l.appendChild(li);
                      });
 
-        update_stepper_views(first);
       } else {
         l.selected = null;
       }
+      update_stepper_views();
    }
 
    var stepper_event_cmd = null;
@@ -1830,6 +1900,9 @@
                            controls.removeChild(tutor.div);
                          }
 
+                         remove_cr_tutor();
+                         remove_r_tutor();
+
                          controls.removeChild(div);
                        };
 
@@ -1843,7 +1916,7 @@
        step.disabled = true;
        step.onclick = function(){
                          if (tutor_event && current_tutor_mode() && (tutor_items != tutor_count)) {
-                           alert("Cannot step until current tutor instantiation is complete.");
+                           alert("Cannot step until current tutor task is complete.");
                          } else {
                          evaluate_cmd("step-stepper",null,[current_stepper_id],
                            function(result){
@@ -2114,6 +2187,9 @@
          i.removeChild(i.firstChild);
        }
       }
+      remove_instan_tutor();
+      remove_cr_tutor();
+      remove_r_tutor();
     }
   }
 
@@ -2296,7 +2372,7 @@
      tutor_entry_window.prompt.innerHTML = "What is the binding for " + variable + "?";
      tutor_entry_window.info.innerHTML = "";
      tutor_entry_window.entry_value.onchange = function() {
-                                                            if ((details.answer.toUpperCase && tutor_entry_window.entry_value.value.toUpperCase &&
+                                                            if ((details.answer.toUpperCase() && tutor_entry_window.entry_value.value.toUpperCase() &&
                                                                  (details.answer.toUpperCase() == tutor_entry_window.entry_value.value.toUpperCase())) ||
                                                                 (details.answer == tutor_entry_window.entry_value.value)) {
                                                              
@@ -2349,6 +2425,489 @@
   </script>
 
 
+
+
+
+  <script> // the display for selecting matching productions
+
+
+
+  function show_cr_tutor(data) {
+
+     var tutor_entry_window = div_views.get("tutor-cr-entry");
+     var controls = document.getElementById('controls');
+     var div = null
+
+     if (tutor_entry_window) {
+ 
+      if (!tutor_entry_window.open) {
+         tutor_entry_window.open = true;
+
+         tutor_entry_window.choices.forEach(function (x) {
+
+           try {
+             tutor_entry_window.div.removeChild(x);
+           } catch (err) {};
+         });
+  
+         try {
+           tutor_entry_window.div.removeChild(tutor_entry_window.np);
+         } catch (err) {};
+      }
+      div = tutor_entry_window.div;
+
+     } else {
+
+       div = document.createElement('div');
+       div.setAttribute("class","tutor-pick-items");
+
+       var title_bar = create_title_bar("Choose Matching Productions",false);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[2].onclick = function(){
+            tutor_items = 0;
+            tutor_entry_window.open = false;
+
+            try {
+              tutor_entry_window.div.removeChild(tutor_entry_window.np);
+            } catch (err) {};
+
+            controls.removeChild(div);
+        };
+
+
+       var prompt = document.createElement('div');
+       prompt.setAttribute("class","tutor-picker-info");
+       var text_box = document.createElement('div');
+       text_box.setAttribute("class","tutor-prompt-box");
+       var text = document.createElement('pre');
+       prompt.appendChild(text_box);
+       text_box.appendChild(text);
+       div.appendChild(prompt);
+
+
+       var check = document.createElement('button');
+       check.innerHTML="Check";
+       
+       div.appendChild(check);
+
+       var none_prompt = document.createElement('div');
+       none_prompt.setAttribute("class","tutor-picker-item");
+       var none_text = document.createElement('pre');
+       var none_box = document.createElement('input');
+       none_box.setAttribute('type',"checkbox");
+       none_text.innerHTML="   None match";
+       none_box.onclick=no_cr_selected;
+       none_prompt.appendChild(none_box);
+       none_prompt.appendChild(none_text);
+
+       tutor_entry_window = {"div": div, "open": true, "prompt": text, "check": check, "none": none_box,"np": none_prompt};
+
+       div_views.set("tutor-cr-entry",tutor_entry_window);
+       controls.appendChild(div);
+
+     }
+
+     tutor_entry_window.none.checked = false ;
+
+     div.appendChild(tutor_entry_window.np);
+
+     tutor_entry_window.boxes = [];
+     tutor_entry_window.answers = [];
+     tutor_entry_window.choices = [];
+     tutor_entry_window.texts = [];
+
+     var pnum=0;
+
+     if (data) {
+       data.forEach(function(x) {
+       
+       prompt = document.createElement('div');
+       prompt.setAttribute("class","tutor-picker-item");
+       box = document.createElement('input');
+       box.setAttribute('type',"checkbox");
+       box.onclick=unselect_none;
+       text_box = document.createElement('div');
+       text_box.setAttribute("class","tutor-item-box");
+       var text = document.createElement('pre');
+       text_box.appendChild(text);
+       prompt.appendChild(box);
+       prompt.appendChild(text_box);
+       div.appendChild(prompt);
+       text.innerHTML = "(production"+pnum+"\n"+x[0]+"  ==>";
+       
+       tutor_entry_window.boxes.push(box); 
+       tutor_entry_window.answers.push(x[1]);
+       tutor_entry_window.choices.push(prompt);
+       tutor_entry_window.texts.push(text);
+       pnum++;
+       });
+     } 
+
+     tutor_entry_window.prompt.innerHTML = "Using the information in the buffers,\nclick the box next to each of the\nproductions which have conditions\nthat match the current state, or check\nthe box labeled 'None match' if none\nof them match.\nThen press the Check button when done.";
+
+     tutor_entry_window.check.innerHTML="Check";
+
+     tutor_entry_window.check.onclick = function() {
+       if (no_cr_selections(tutor_entry_window)) {
+         alert("You must select at least one production or the None match option.");
+       } else if (all_cr_correct(tutor_entry_window)) {
+         tutor_entry_window.div.removeChild(tutor_entry_window.np);
+         remove_cr_tutor();
+       } else {
+         tutor_entry_window.prompt.innerHTML = "These selections were incorrect.\nPress Ok after reviewing the reasons.";
+
+         tutor_entry_window.div.removeChild(tutor_entry_window.np);
+
+         tutor_entry_window.check.innerHTML="OK";
+         tutor_entry_window.check.onclick = function () {
+           tutor_items = 0;
+           tutor_entry_window.open = false;
+           controls.removeChild(tutor_entry_window.div);
+         };
+       }
+     };
+     
+     controls.appendChild(tutor_entry_window.div);
+   }
+
+   function no_cr_selected() {
+     var tutor_entry_window = div_views.get("tutor-cr-entry");
+     var box = tutor_entry_window.none;
+     
+     if (box.checked) {
+     
+       tutor_entry_window.boxes.forEach(function(x){
+         x.checked = false;
+       });
+     }
+   }
+
+   function unselect_none(){
+     var tutor_entry_window = div_views.get("tutor-cr-entry");
+     var box = tutor_entry_window.none;
+     
+     box.checked = false;
+   }
+
+   function all_cr_correct(tutor_entry_window) {
+
+     var result = true;
+
+     var boxes = tutor_entry_window.boxes;
+     var answers = tutor_entry_window.answers;
+     var choices = tutor_entry_window.choices;
+     var texts = tutor_entry_window.texts;
+
+     for (var i = 0; i < boxes.length; i++) {
+       if (boxes[i].checked) {
+         if (answers[i] == "") {
+           tutor_entry_window.div.removeChild(choices[i]);
+         } else {
+           result = false;
+           boxes[i].disabled = true;
+           texts[i].innerHTML = texts[i].innerHTML + "\n<b>"+answers[i]+"</b>";
+         }
+       } else {
+         if (answers[i] != "") {
+           tutor_entry_window.div.removeChild(choices[i]);
+         } else {
+           result = false;
+           boxes[i].disabled = true;
+           texts[i].innerHTML = texts[i].innerHTML + "\n<b>Does Match current state</b>";
+         }
+       }
+     }
+     
+     return result;
+   }
+
+   function no_cr_selections(tutor_entry_window) {
+     var box = tutor_entry_window.none;
+     
+     if (box.checked) {
+       return false;
+     } else {
+     
+       var result = true;
+
+       tutor_entry_window.boxes.forEach(function(x){
+         if (x.checked) {
+           result = false;
+         }
+       });
+
+       return result;
+     }
+   }
+
+   function remove_cr_tutor() {
+     var tutor_entry_window = div_views.get("tutor-cr-entry");
+     var controls = document.getElementById('controls');
+
+     tutor_items = 0;
+
+     if (tutor_entry_window) {
+ 
+       if (tutor_entry_window.open) {
+         tutor_entry_window.open = false;
+         controls.removeChild(tutor_entry_window.div);
+       }
+     }
+   }
+
+   function remove_r_tutor() {
+     var tutor_entry_window = div_views.get("tutor-r-entry");
+     var controls = document.getElementById('controls');
+
+     tutor_items = 0;
+
+     if (tutor_entry_window) {
+ 
+       if (tutor_entry_window.open) {
+         tutor_entry_window.open = false;
+         controls.removeChild(tutor_entry_window.div);
+       }
+     }
+   }
+
+   function remove_instan_tutor() {
+
+     tutor_entry_window = div_views.get("tutor-entry");
+     var controls = document.getElementById('controls');
+
+     if (tutor_entry_window) {
+ 
+       if (tutor_entry_window.open) {
+         tutor_entry_window.open = false;
+         controls.removeChild(tutor_entry_window.div);
+       }
+     }
+   }
+
+
+
+
+  // the display for selecting matching chunks
+
+
+  function show_r_tutor(data) {
+
+     var tutor_entry_window = div_views.get("tutor-r-entry");
+     var controls = document.getElementById('controls');
+     var div = null
+
+     if (tutor_entry_window) {
+ 
+      if (!tutor_entry_window.open) {
+         tutor_entry_window.open = true;
+
+         tutor_entry_window.choices.forEach(function (x) {
+
+           try {
+             tutor_entry_window.div.removeChild(x);
+           } catch (err) {};
+         });
+  
+         try {
+           tutor_entry_window.div.removeChild(tutor_entry_window.np);
+         } catch (err) {};
+      }
+      div = tutor_entry_window.div;
+
+     } else {
+
+       div = document.createElement('div');
+       div.setAttribute("class","tutor-pick-items");
+
+       var title_bar = create_title_bar("Choose Matching Chunks",false);
+
+       div.appendChild(title_bar[0]);
+
+       title_bar[2].onclick = function(){
+            tutor_items = 0;
+            tutor_entry_window.open = false;
+
+            try {
+              tutor_entry_window.div.removeChild(tutor_entry_window.np);
+            } catch(err) {};
+
+            controls.removeChild(div);
+        };
+
+       var prompt = document.createElement('div');
+       prompt.setAttribute("class","tutor-picker-info");
+       var text_box = document.createElement('div');
+       text_box.setAttribute("class","tutor-prompt-box");
+       var text = document.createElement('pre');
+       prompt.appendChild(text_box);
+       text_box.appendChild(text);
+       div.appendChild(prompt);
+
+
+       var check = document.createElement('button');
+       check.innerHTML="Check";
+       
+       div.appendChild(check);
+
+       var none_prompt = document.createElement('div');
+       none_prompt.setAttribute("class","tutor-picker-item");
+       var none_text = document.createElement('pre');
+       var none_box = document.createElement('input');
+       none_box.setAttribute('type',"checkbox");
+       none_text.innerHTML="   None match";
+       none_box.onclick=no_r_selected;
+       none_prompt.appendChild(none_box);
+       none_prompt.appendChild(none_text);
+
+       tutor_entry_window = {"div": div, "open": true, "prompt": text, "check": check, "none": none_box,"np": none_prompt};
+
+       div_views.set("tutor-r-entry",tutor_entry_window);
+       controls.appendChild(div);
+
+     }
+
+     tutor_entry_window.none.checked = false ;
+
+     div.appendChild(tutor_entry_window.np);
+
+     tutor_entry_window.boxes = [];
+     tutor_entry_window.answers = [];
+     tutor_entry_window.choices = [];
+     tutor_entry_window.texts = [];
+
+     var pnum=0;
+
+     if (data[1]) {
+       data[1].forEach(function(x) {
+       
+       prompt = document.createElement('div');
+       prompt.setAttribute("class","tutor-picker-item");
+       box = document.createElement('input');
+       box.setAttribute('type',"checkbox");
+       box.onclick=unselect_none_r;
+       text_box = document.createElement('div');
+       text_box.setAttribute("class","tutor-item-box");
+       var text = document.createElement('pre');
+       text_box.appendChild(text);
+       prompt.appendChild(box);
+       prompt.appendChild(text_box);
+       div.appendChild(prompt);
+       text.innerHTML = x[0];
+       
+       tutor_entry_window.boxes.push(box); 
+       tutor_entry_window.answers.push(x[1]);
+       tutor_entry_window.choices.push(prompt);
+       tutor_entry_window.texts.push(text);
+       pnum++;
+       });
+     } 
+
+     tutor_entry_window.prompt.innerHTML = "Click the box next to each chunk from\nthe model's declarative memory which\nmatches the retrieval request from\nthe production that fired (shown below)\nor check the 'None match' box if\nnone of them match.\nThen press the Check button when done.\n<b>"+data[0]+"</b>";
+
+     tutor_entry_window.check.innerHTML="Check";
+
+     tutor_entry_window.check.onclick = function() {
+       if (no_r_selections(tutor_entry_window)) {
+         alert("You must select at least one chunk or the None match option.");
+       } else if (all_r_correct(tutor_entry_window)) {
+         tutor_entry_window.div.removeChild(tutor_entry_window.np);
+         remove_r_tutor();
+       } else {
+         tutor_entry_window.prompt.innerHTML = "These selections were incorrect.\nFor this request\n<b>"+data[0]+"</b>\n\nPress Ok after reviewing the items.";
+
+         tutor_entry_window.div.removeChild(tutor_entry_window.np);
+
+         tutor_entry_window.check.innerHTML="OK";
+         tutor_entry_window.check.onclick = function () {
+           tutor_items = 0;
+           tutor_entry_window.open = false;
+           controls.removeChild(tutor_entry_window.div);
+         };
+       }
+     };
+     
+     controls.appendChild(tutor_entry_window.div);
+   }
+
+   function no_r_selected() {
+     var tutor_entry_window = div_views.get("tutor-r-entry");
+     var box = tutor_entry_window.none;
+     
+     if (box.checked) {
+     
+       tutor_entry_window.boxes.forEach(function(x){
+         x.checked = false;
+       });
+     }
+   }
+
+   function unselect_none_r(){
+     var tutor_entry_window = div_views.get("tutor-r-entry");
+     var box = tutor_entry_window.none;
+     
+     box.checked = false;
+   }
+
+   function all_r_correct(tutor_entry_window) {
+
+     var result = true;
+
+     var boxes = tutor_entry_window.boxes;
+     var answers = tutor_entry_window.answers;
+     var choices = tutor_entry_window.choices;
+     var texts = tutor_entry_window.texts;
+
+     for (var i = 0; i < boxes.length; i++) {
+       if (boxes[i].checked) {
+         if (answers[i]) {
+           tutor_entry_window.div.removeChild(choices[i]);
+         } else {
+           result = false;
+           boxes[i].disabled = true;
+           texts[i].innerHTML = texts[i].innerHTML + "\n<b>Does not match the request</b>";
+         }
+       } else {
+         if (answers[i]) {
+           result = false;
+           boxes[i].disabled = true;
+           texts[i].innerHTML = texts[i].innerHTML + "\n<b>Does Match the request</b>";
+         } else {
+           tutor_entry_window.div.removeChild(choices[i]);
+         }
+       }
+     }
+     
+     return result;
+   }
+
+   function no_r_selections(tutor_entry_window) {
+     var box = tutor_entry_window.none;
+     
+     if (box.checked) {
+       return false;
+     } else {
+     
+       var result = true;
+
+       tutor_entry_window.boxes.forEach(function(x){
+         if (x.checked) {
+           result = false;
+         }
+       });
+
+       return result;
+     }
+   }
+
+  </script>
+
+
+
+
+
+
  
   <script>  // Open the experiment window tool in another window/tab
 
@@ -2377,6 +2936,46 @@
      width: 100%;
      flex-direction: row;
    }
+
+   .tutor-pick-items {
+     display: flex;
+     width: 350px;
+     border: double;
+     height: 630px;
+     flex-direction: column;
+     overflow: auto;
+     resize: both;
+   }
+
+   .tutor-picker-info {
+     display: flex;
+     height:  auto;
+     width:   100%;
+     flex-direction: row;
+   }
+
+   .tutor-picker-item {
+     display: flex;
+     height:  auto;
+     border: single;
+     width:   100%;
+     flex-direction: row;
+   }
+
+   .tutor-prompt-box {
+     display: flex;
+     overflow: auto;
+     width: 100%;
+     height: auto;
+   }
+
+   .tutor-item-box {
+     display: flex;
+     overflow: auto;
+     width: 100%;
+     height: auto;
+   }
+
 
   </style>
 
@@ -2426,11 +3025,33 @@
       </div>
 
       <div class="button-section"> 
+
+        <!-- start-normal -->
+
         <div>Files</div>
         <button type="button" onclick="load_model(true)">Load ACT-R Tutorial Model</button>
         <div> Unit <input type="number"  class="enter" value="1" id="load_unit" min="1" max="8"></div>
         <button type="button" onclick="load_model(false)">Load ACT-R Tutorial Experiment Code</button>
         <button type="button" onclick="load_python_module()">Import Python Module</button>
+
+        <!-- end-normal -->
+
+        <!-- start-container 
+
+        <div>Unit 1 Models</div>
+        <button type="button" onclick="load_unit1_model()">Load Tutorial Model</button>
+        <select id="unit_1_model">
+         <option value="">-Select Unit 1 model-</option>
+         <option value="count.lisp">Count</option> 
+         <option value="addition.lisp">Addition</option> 
+         <option value="semantic.lisp">Semantic</option> 
+         <option value="tutor-model.lisp">Tutor Model</option> 
+        </select>
+
+        end-container -->
+
+
+
       </div>
   
       <div class="button-section"> 

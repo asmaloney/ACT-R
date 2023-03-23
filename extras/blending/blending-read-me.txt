@@ -83,7 +83,8 @@ magnitude to use for blending (see details below).
 
 If :mag->value is set to a function, then that function 
 will be used to convert magnitudes back into values when
-the :value-mag function has returned magnitude values 
+the :value-mag function has returned magnitude values or
+to adjust the result if the :value-mag function is identity
 (see details below).
 
 :blend-all-slots
@@ -295,12 +296,13 @@ c) the m(k,i) values are neither all numbers nor all chunks, or
   R(k) is then the value j for which the B(j) value is minimum.
 
 
-If there is no mag->value function specified for the module or the 
-value->mag function returned values such that m(k,i) = v(k,i) for all i
-then the value for the slot k will be the value R(k).
+If there is no mag->value function specified or the value->mag 
+function returned values such that m(k,i) = v(k,i) for all i then
+the value for the slot k will be the value R(k).
 
-If there is a mag->value function and there exists an i such that
-m(k,i) != v(k,i) then the value for the slot k will be the result 
+If there is a mag->value function and either there exists an i such
+that m(k,i) != v(k,i) or the value->mag function is the default
+function identity then the value for the slot k will be the result
 of calling the mag->value function with two parameters.  The first
 will be the value R(k).  The second value will be the chunk-spec 
 of the request which was made to the module.
